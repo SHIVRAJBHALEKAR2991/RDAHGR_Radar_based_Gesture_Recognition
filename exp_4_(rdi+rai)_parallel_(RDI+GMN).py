@@ -220,21 +220,21 @@ class TEA_MTA(tf.keras.layers.Layer):
         Xo_0 = Xi_0
 
         Xi_1 = tf.keras.layers.Add()([Xo_0, Xi_1])
-        Xi_1_reshaped_temp = tf.reshape(Xi_1, [batch_size * T, H * W, split_factor])  # ✅ FIXED
+        Xi_1_reshaped_temp = tf.reshape(Xi_1, [batch_size * T, H * W, split_factor])  #
         Xi_1_temp = self.conv_temp_1(Xi_1_reshaped_temp)
-        Xi_1_reshaped_spa = tf.reshape(Xi_1_temp, [batch_size, T, H, W, split_factor])  # ✅ FIXED
+        Xi_1_reshaped_spa = tf.reshape(Xi_1_temp, [batch_size, T, H, W, split_factor])  #
         Xo_1 = self.conv_spa_1(Xi_1_reshaped_spa)
 
         Xi_2 = tf.keras.layers.Add()([Xo_1, Xi_2])
-        Xi_2_reshaped_temp = tf.reshape(Xi_2, [batch_size * T, H * W, split_factor])  # ✅ FIXED
+        Xi_2_reshaped_temp = tf.reshape(Xi_2, [batch_size * T, H * W, split_factor])  #
         Xi_2_temp = self.conv_temp_2(Xi_2_reshaped_temp)
-        Xi_2_reshaped_spa = tf.reshape(Xi_2_temp, [batch_size, T, H, W, split_factor])  # ✅ FIXED
+        Xi_2_reshaped_spa = tf.reshape(Xi_2_temp, [batch_size, T, H, W, split_factor])  #
         Xo_2 = self.conv_spa_2(Xi_2_reshaped_spa)
 
         Xi_3 = tf.keras.layers.Add()([Xo_2, Xi_3])
-        Xi_3_reshaped_temp = tf.reshape(Xi_3, [batch_size * T, H * W, split_factor])  # ✅ FIXED
+        Xi_3_reshaped_temp = tf.reshape(Xi_3, [batch_size * T, H * W, split_factor])  #
         Xi_3_temp = self.conv_temp_3(Xi_3_reshaped_temp)
-        Xi_3_reshaped_spa = tf.reshape(Xi_3_temp, [batch_size, T, H, W, split_factor])  # ✅ FIXED
+        Xi_3_reshaped_spa = tf.reshape(Xi_3_temp, [batch_size, T, H, W, split_factor])  #
         Xo_3 = self.conv_spa_3(Xi_3_reshaped_spa)
 
         Xo = tf.keras.layers.Concatenate(axis=-1)([Xo_0, Xo_1, Xo_2, Xo_3])
