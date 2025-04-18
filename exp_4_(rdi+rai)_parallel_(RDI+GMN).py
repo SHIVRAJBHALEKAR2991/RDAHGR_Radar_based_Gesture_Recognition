@@ -1,4 +1,4 @@
-# ======================== experiment 4 PARALLEL FUSION ARCHITECTURE ==========================
+# ======================== EXPERIMENT 4 PARALLEL FUSION ARCHITECTURE ==========================
 #
 #                ┌──────────────┐            ┌──────────────┐
 #                │   Input RDI  │            │   Input RAI  │
