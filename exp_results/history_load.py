@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # Load the history dictionary
-history_path = 'exp1/exp_1_mesca_early_history.npy'
+history_path = 'exp3/exp_3_(rdi+rai)_rdi_mesca_gmn.npy'
 history = np.load(history_path, allow_pickle=True).item()
 
 # Plot and save loss curve
@@ -15,7 +15,7 @@ plt.xlabel('Epoch')
 plt.ylabel('Loss')
 plt.legend()
 plt.grid(True)
-plt.savefig('exp1_loss_curve.png')   # ← saved here
+plt.savefig('exp3_loss_curve.png')   # ← saved here
 plt.close()
 
 # Plot and save accuracy curve (if present)
@@ -29,7 +29,7 @@ if 'accuracy' in history:
     plt.ylabel('Accuracy')
     plt.legend()
     plt.grid(True)
-    plt.savefig('exp1_accuracy_curve.png')   # ← saved here
+    plt.savefig('exp3_accuracy_curve.png')   # ← saved here
     plt.close()
 
 print("Saved plots as 'loss_curve.png' and 'accuracy_curve.png'")
