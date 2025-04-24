@@ -549,7 +549,7 @@ conv2_TEA3 = tf.keras.layers.Conv2D(filters=512,kernel_size=(1,1),padding='same'
                        activation='relu',kernel_regularizer=tf.keras.regularizers.l2(1e-5))
 
 ##### ArcFace Loss
-arc_logit_layer = ArcFace(11,30.0,0.4,tf.keras.regularizers.l2(1e-4))
+arc_logit_layer = ArcFace(11,30.0,0.4,tf.keras.regularizers.l2(1e-4))  ##### MADE CHANGES HERE WITH THE 'M' VALUE
 
 ###### Defining Model
 
@@ -601,7 +601,7 @@ conv23_cross_mseca = tf.keras.layers.Add()([conv23_cross_mseca,conv23])
 #optisecam3d_shuffle_op = optisecam3d_shuffle(conv23)
 
 ##### TEA
-
+###HERE ADDED RESHAPEING AND FLATTING LAYERS FOR SHAPE AND SIZE COMPATIBILITY
 #### TEA-1
 conv1_tea1 = conv1_TEA1(conv23_cross_mseca)
 #tea_me1 = TEA_ME_1(conv1_tea1)
