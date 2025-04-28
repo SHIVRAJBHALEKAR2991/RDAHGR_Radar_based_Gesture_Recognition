@@ -1,4 +1,4 @@
-name: your-env-name
+name: rdhgr_venvt
 channels:
   - conda-forge
   - defaults
