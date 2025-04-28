@@ -3,7 +3,7 @@ channels:
   - conda-forge
   - defaults
 dependencies:
-  - python=3.8
+  - python=3.9
   - charset-normalizer==2.0.12
   - libblas==3.9.0
   - libcblas==3.9.0
@@ -25,4 +25,4 @@ dependencies:
   - protobuf==3.19.6
   - python-dateutil==2.9.0
   - mkl==2023.2.0
-  - tensorflow==2.6.0  # CPU version
+  - tensorflow==2.6.0
