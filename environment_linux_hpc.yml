@@ -1,0 +1,26 @@
+name: your-env-name
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - charset-normalizer==3.4.0
+  - libblas==3.9.0
+  - libcblas==3.9.0
+  - liblapack==3.9.0
+  - libpng==1.6.43
+  - libuuid==2.38.1
+  - libgcc-ng==12.3.0
+  - libstdcxx-ng==12.3.0
+  - libsqlite==3.49.1
+  - expat==2.7.0
+  - cffi==1.17.0
+  - pycparser==2.22
+  - markdown==3.6
+  - pyu2f==0.1.5
+  - pyasn1-modules==0.4.1
+  - google-auth==1.35.0
+  - google-auth-oauthlib==0.4.6
+  - grpcio==1.46.3
+  - python-dateutil==2.9.0
+  - mkl==2023.2.0
+  - tensorflow==2.5.0  # Will pull cpu version from conda-forge
