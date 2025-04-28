@@ -61,8 +61,8 @@ import tensorflow as tf
 import os
 import gc
 import math
-import pydot
-from sklearn.utils import shuffle
+# import pydot
+# from sklearn.utils import shuffle
 
 ####### Loading Dataset
 
