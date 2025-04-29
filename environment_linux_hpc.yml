@@ -4,25 +4,26 @@ channels:
   - defaults
 dependencies:
   - python=3.9
-  - charset-normalizer==2.0.12
-  - libblas==3.9.0
-  - libcblas==3.9.0
-  - liblapack==3.9.0
-  - libpng==1.6.43
-  - libuuid==2.38.1
-  - libgcc-ng==12.3.0
-  - libstdcxx-ng==12.3.0
-  - libsqlite==3.49.1
-  - expat==2.7.0
-  - cffi==1.17.0
-  - pycparser==2.22
-  - markdown==3.6
-  - pyu2f==0.1.5
-  - pyasn1-modules==0.4.1
-  - google-auth==1.35.0
-  - google-auth-oauthlib==0.4.6
-  - grpcio==1.39.0
-  - protobuf==3.19.6
-  - python-dateutil==2.9.0
-  - mkl==2023.2.0
-  - tensorflow==2.6.0
+  - charset-normalizer=2.0.12
+  - libblas=*=*openblas*  # Use openblas variant which is more HPC-friendly
+  - libcblas=*=*openblas*
+  - liblapack=*=*openblas*
+  - libpng=1.6.43
+  - libuuid=2.38.1
+  - libgcc-ng=12.3.0
+  - libstdcxx-ng=12.3.0
+  - libsqlite=3.49.1
+  - expat=2.7.0
+  - cffi=1.17.0
+  - pycparser=2.22
+  - markdown=3.6
+  - pyu2f=0.1.5
+  - pyasn1-modules=0.4.1
+  - google-auth=1.35.0
+  - google-auth-oauthlib=0.4.6
+  - grpcio=1.39.0
+  - protobuf=3.19.6
+  - python-dateutil=2.9.0
+  - mkl=2023.2.0
+  - tensorflow=2.6.0
+  - importlib-metadata  # Explicitly add to resolve dependency
