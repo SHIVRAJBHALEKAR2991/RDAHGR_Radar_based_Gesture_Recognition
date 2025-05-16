@@ -541,7 +541,7 @@ conv13_rai = two_plus_oneDConv(32, 3, 32, 32, 32 + 32 + 1, 40)
 
 conv21_rai = two_plus_oneDConv(64, 3, 32, 32, 32, 40)
 conv22_rai = two_plus_oneDConv(64, 3, 32, 32, 64 + 32, 40)
-conv23_rai = two_plus_oneDConv(64, 3, 32, 32, 192, 40)
+conv23_rai = two_plus_oneDConv(64, 3, 32, 32, 160, 40)
 
 ##### Channel Attention Module
 # jlce_module = JLCE(1,5,64)
