@@ -177,24 +177,26 @@ class TEA_MTA(tf.keras.layers.Layer):
         self.T = T
         self.H = H
         self.W = W
-        split_factor = self.num_channels // 4
+        self.split_factor = self.num_channels // 4
 
-        self.conv_temp_1 = tf.keras.layers.Conv1D(filters=split_factor, kernel_size=3, padding='same',
-                                                  groups=split_factor, activation='relu',
-                                                  kernel_regularizer=tf.keras.regularizers.l2(1e-5))
-        self.conv_spa_1 = tf.keras.layers.Conv2D(filters=split_factor, kernel_size=(3, 3), padding='same',
+        # Replacing grouped Conv1D with standard Conv1D layers
+        self.temp_conv1_layers = [tf.keras.layers.Conv1D(
+            filters=1, kernel_size=3, padding='same', activation='relu',
+            kernel_regularizer=tf.keras.regularizers.l2(1e-5)) for _ in range(self.split_factor)]
+
+        self.temp_conv2_layers = [tf.keras.layers.Conv1D(
+            filters=1, kernel_size=3, padding='same', activation='relu',
+            kernel_regularizer=tf.keras.regularizers.l2(1e-5)) for _ in range(self.split_factor)]
+
+        self.temp_conv3_layers = [tf.keras.layers.Conv1D(
+            filters=1, kernel_size=3, padding='same', activation='relu',
+            kernel_regularizer=tf.keras.regularizers.l2(1e-5)) for _ in range(self.split_factor)]
+
+        self.conv_spa_1 = tf.keras.layers.Conv2D(filters=self.split_factor, kernel_size=(3, 3), padding='same',
                                                  activation='relu', kernel_regularizer=tf.keras.regularizers.l2(1e-5))
-
-        self.conv_temp_2 = tf.keras.layers.Conv1D(filters=split_factor, kernel_size=3, padding='same',
-                                                  groups=split_factor, activation='relu',
-                                                  kernel_regularizer=tf.keras.regularizers.l2(1e-5))
-        self.conv_spa_2 = tf.keras.layers.Conv2D(filters=split_factor, kernel_size=(3, 3), padding='same',
+        self.conv_spa_2 = tf.keras.layers.Conv2D(filters=self.split_factor, kernel_size=(3, 3), padding='same',
                                                  activation='relu', kernel_regularizer=tf.keras.regularizers.l2(1e-5))
-
-        self.conv_temp_3 = tf.keras.layers.Conv1D(filters=split_factor, kernel_size=3, padding='same',
-                                                  groups=split_factor, activation='relu',
-                                                  kernel_regularizer=tf.keras.regularizers.l2(1e-5))
-        self.conv_spa_3 = tf.keras.layers.Conv2D(filters=split_factor, kernel_size=(3, 3), padding='same',
+        self.conv_spa_3 = tf.keras.layers.Conv2D(filters=self.split_factor, kernel_size=(3, 3), padding='same',
                                                  activation='relu', kernel_regularizer=tf.keras.regularizers.l2(1e-5))
 
     def get_config(self):
@@ -208,47 +210,40 @@ class TEA_MTA(tf.keras.layers.Layer):
         })
         return config
 
-    def compute_output_shape(self, input_shape):
-        batch_size = input_shape[0]
-        temporal_dim = input_shape[1]
-        height = input_shape[2]
-        width = input_shape[3]
-        channels = input_shape[4]
-
-        output_height = height
-        output_width = width
-        output_channels = self.num_channels
-
-        return (batch_size, temporal_dim, output_height, output_width, output_channels)
+    def grouped_conv1d(self, x, conv_layers):
+        # x: [B, L, C], conv_layers: list of Conv1D layers for each channel
+        x_splits = tf.split(x, num_or_size_splits=self.split_factor, axis=-1)
+        out_splits = [conv_layer(split) for conv_layer, split in zip(conv_layers, x_splits)]
+        return tf.concat(out_splits, axis=-1)
 
     def call(self, X):
-        batch_size = tf.shape(X)[0]  # Dynamically compute batch size
-        T = X.shape[1]
-        H = X.shape[2]
-        W = X.shape[3]
-        C = X.shape[4]
-        split_factor = C // 4
+        batch_size = tf.shape(X)[0]
+        T = self.T
+        H = self.H
+        W = self.W
+        C = self.num_channels
+        split_factor = self.split_factor
 
         Xi_0, Xi_1, Xi_2, Xi_3 = tf.split(X, num_or_size_splits=4, axis=-1)
 
         Xo_0 = Xi_0
 
         Xi_1 = tf.keras.layers.Add()([Xo_0, Xi_1])
-        Xi_1_reshaped_temp = tf.reshape(Xi_1, [batch_size * T, H * W, split_factor])  # ✅ FIXED
-        Xi_1_temp = self.conv_temp_1(Xi_1_reshaped_temp)
-        Xi_1_reshaped_spa = tf.reshape(Xi_1_temp, [batch_size, T, H, W, split_factor])  # ✅ FIXED
+        Xi_1_reshaped_temp = tf.reshape(Xi_1, [batch_size * T, H * W, split_factor])
+        Xi_1_temp = self.grouped_conv1d(Xi_1_reshaped_temp, self.temp_conv1_layers)
+        Xi_1_reshaped_spa = tf.reshape(Xi_1_temp, [batch_size, T, H, W, split_factor])
         Xo_1 = self.conv_spa_1(Xi_1_reshaped_spa)
 
         Xi_2 = tf.keras.layers.Add()([Xo_1, Xi_2])
-        Xi_2_reshaped_temp = tf.reshape(Xi_2, [batch_size * T, H * W, split_factor])  # ✅ FIXED
-        Xi_2_temp = self.conv_temp_2(Xi_2_reshaped_temp)
-        Xi_2_reshaped_spa = tf.reshape(Xi_2_temp, [batch_size, T, H, W, split_factor])  # ✅ FIXED
+        Xi_2_reshaped_temp = tf.reshape(Xi_2, [batch_size * T, H * W, split_factor])
+        Xi_2_temp = self.grouped_conv1d(Xi_2_reshaped_temp, self.temp_conv2_layers)
+        Xi_2_reshaped_spa = tf.reshape(Xi_2_temp, [batch_size, T, H, W, split_factor])
         Xo_2 = self.conv_spa_2(Xi_2_reshaped_spa)
 
         Xi_3 = tf.keras.layers.Add()([Xo_2, Xi_3])
-        Xi_3_reshaped_temp = tf.reshape(Xi_3, [batch_size * T, H * W, split_factor])  # ✅ FIXED
-        Xi_3_temp = self.conv_temp_3(Xi_3_reshaped_temp)
-        Xi_3_reshaped_spa = tf.reshape(Xi_3_temp, [batch_size, T, H, W, split_factor])  # ✅ FIXED
+        Xi_3_reshaped_temp = tf.reshape(Xi_3, [batch_size * T, H * W, split_factor])
+        Xi_3_temp = self.grouped_conv1d(Xi_3_reshaped_temp, self.temp_conv3_layers)
+        Xi_3_reshaped_spa = tf.reshape(Xi_3_temp, [batch_size, T, H, W, split_factor])
         Xo_3 = self.conv_spa_3(Xi_3_reshaped_spa)
 
         Xo = tf.keras.layers.Concatenate(axis=-1)([Xo_0, Xo_1, Xo_2, Xo_3])
