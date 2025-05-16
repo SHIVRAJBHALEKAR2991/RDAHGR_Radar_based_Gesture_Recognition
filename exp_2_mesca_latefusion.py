@@ -731,10 +731,18 @@ history = model.fit(
     [X_train_rdi, X_train_rai,y_train_onehot], y_train_onehot,
     epochs=250,
     batch_size=2,
-    validation_data=([X_dev_rdi, X_dev_rai],y_dev_onehot, y_dev_onehot),
+    validation_data=([X_dev_rdi, X_dev_rai,y_dev_onehot], y_dev_onehot),
     validation_batch_size=2
 )
 
 
 ##### Saving Training Metrics
-# np.save('./Model History/RDAHGR_RDI_5050_Soli.npy', history.history)
+np.save('exp_2_mesca_latefusion_history.npy', history.history)
+
+# Save only the architecture
+model_json = model.to_json()
+with open("exp_2_mesca_latefusion_architecture.json", "w") as json_file:
+    json_file.write(model_json)
+
+# Save only the weights
+model.save_weights("exp_2_mesca_latefusion_weights.h5")
