@@ -20,7 +20,6 @@ class two_plus_oneDConv(tf.keras.layers.Layer):
             kernel_size=(self.kernel_dims, self.kernel_dims),
             padding='same',
             activation='linear',
-            groups=C,
             kernel_regularizer=tf.keras.regularizers.l2(1e-5)
         )
 
