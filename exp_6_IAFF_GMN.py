@@ -377,58 +377,52 @@ class CT_Module(tf.keras.layers.Layer):
 ####### (2+1)D Convolutional Layer
 
 class two_plus_oneDConv(tf.keras.layers.Layer):
-    """ Implementation of(2+1)D Conv """
+    def __init__(self, filters, kernel_dims, H, W, C, T, **kwargs):
+        super().__init__(**kwargs)
+        self.filters = filters
+        self.kernel_dims = kernel_dims
+        self.H = H
+        self.W = W
+        self.C = C
+        self.T = T
 
-    def __init__(self, filters, kernel_dims, H, W, C, T):
-        #### Defining Essentials
-        super().__init__()
-        self.filters = filters  # Number of Filters in the Output
-        self.kernel_dims = kernel_dims  # Dimensions of the Kernel
-        self.H = H  # Height of the Input
-        self.W = W  # Width of the Input
-        self.C = C  # Number of Channels in the Input
-        self.T = T  # Number of Frames in the Input
+        self.conv2d_depthwise = tf.keras.layers.Conv2D(
+            filters=C,
+            kernel_size=(self.kernel_dims, self.kernel_dims),
+            padding='same',
+            activation='linear',
+            groups=C,
+            kernel_regularizer=tf.keras.regularizers.l2(1e-5)
+        )
 
-        #### Defining Layers
-        self.conv2d_depthwise = tf.keras.layers.Conv2D(filters=self.C, kernel_size=(self.kernel_dims, self.kernel_dims),
-                                                       padding='same', activation='linear', groups=self.C,
-                                                       kernel_regularizer=tf.keras.regularizers.l2(1e-5))
-        self.conv2d_pointwise = tf.keras.layers.Conv2D(filters=self.filters, kernel_size=(1, 1),
-                                                       padding='same', activation='relu',
-                                                       kernel_regularizer=tf.keras.regularizers.l2(1e-5))
-        self.conv1d = tf.keras.layers.Conv1D(filters=self.filters, kernel_size=self.kernel_dims, padding='same',
-                                             activation='relu', kernel_regularizer=tf.keras.regularizers.l2(1e-5))
+        self.conv2d_pointwise = tf.keras.layers.Conv2D(
+            filters=self.filters,
+            kernel_size=(1, 1),
+            padding='same',
+            activation='relu',
+            kernel_regularizer=tf.keras.regularizers.l2(1e-5)
+        )
 
-    def get_config(self):
-        config = super().get_config().copy()
-        config.update({
-            'filters': self.filters,
-            'kernel_dims': self.kernel_dims,
-            'H': self.H,
-            'W': self.W,
-            'C': self.C,
-            'T': self.T
-        })
-        return config
+        self.conv1d = tf.keras.layers.Conv1D(
+            filters=self.filters,
+            kernel_size=self.kernel_dims,
+            padding='same',
+            activation='relu',
+            kernel_regularizer=tf.keras.regularizers.l2(1e-5)
+        )
 
     def call(self, X):
-        """
-        Implementation of (2+1)D Convolution
-
-        INPUTS:-
-        1) X : Input Tensor of Shape [N,T,H,W,C] (Implementation involves 'Channel Last' Strategy)
-
-        OUTPUTS:-H
-        1) X_o : Tensor of shape [N,T,H,W,C]
-
-        """
+        N = tf.shape(X)[0]
+        X = tf.reshape(X, [-1, self.H, self.W, self.C])
         X = self.conv2d_depthwise(X)
         X = self.conv2d_pointwise(X)
-        X = tf.keras.layers.Reshape((self.H * self.W, self.T, self.filters))(X)
+        X = tf.reshape(X, [N, self.T, self.H, self.W, self.filters])
+        X = tf.transpose(X, [0, 2, 3, 1, 4])
+        X = tf.reshape(X, [-1, self.T, self.filters])
         X = self.conv1d(X)
-        X_o = tf.keras.layers.Reshape((self.T, self.H, self.W, self.filters))(X)
-
-        return X_o
+        X = tf.reshape(X, [N, self.H, self.W, self.T, self.filters])
+        X = tf.transpose(X, [0, 3, 1, 2, 4])
+        return X
 
 
 class Cross_MSECA_Module(tf.keras.layers.Layer):
