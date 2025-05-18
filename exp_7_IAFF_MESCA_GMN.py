@@ -397,7 +397,7 @@ class two_plus_oneDConv(tf.keras.layers.Layer):
 
         #### Defining Layers
         self.conv2d_depthwise = tf.keras.layers.Conv2D(filters=self.C, kernel_size=(self.kernel_dims, self.kernel_dims),
-                                                       padding='same', activation='linear', groups=self.C,
+                                                       padding='same', activation='linear',
                                                        kernel_regularizer=tf.keras.regularizers.l2(1e-5))
         self.conv2d_pointwise = tf.keras.layers.Conv2D(filters=self.filters, kernel_size=(1, 1),
                                                        padding='same', activation='relu',
