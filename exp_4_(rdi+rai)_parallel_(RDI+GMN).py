@@ -762,7 +762,7 @@ model.summary()
 ###### Training the Model
 history = model.fit(
     [X_train_rdi, X_train_rai,y_train_onehot], y_train_onehot,
-    epochs=50,
+    epochs=30,
     batch_size=2,
     validation_data=([X_dev_rdi, X_dev_rai,y_dev_onehot], y_dev_onehot),
     validation_batch_size=2
