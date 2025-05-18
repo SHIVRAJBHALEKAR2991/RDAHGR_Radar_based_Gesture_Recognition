@@ -1,58 +1,54 @@
 import tensorflow as tf
+from tensorflow.keras import layers
 
-# Define dummy input: [batch, T, H, W, C]
-N, T, H, W, C = 2, 40, 32, 32, 1
-dummy_input = tf.random.normal([N, T, H, W, C])
+class MVFModuleChannelsLast(tf.keras.layers.Layer):
+    def __init__(self, alpha=0.5, kernel_size=3):
+        super(MVFModuleChannelsLast, self).__init__()
+        self.alpha = alpha
+        self.kernel_size = kernel_size
+        self.activation = layers.ReLU()
 
-# Define the custom layer
-class two_plus_oneDConv(tf.keras.layers.Layer):
-    def __init__(self, filters, kernel_dims, H, W, C, T, **kwargs):
-        super().__init__(**kwargs)
-        self.filters = filters
-        self.kernel_dims = kernel_dims
-        self.H = H
-        self.W = W
-        self.C = C
-        self.T = T
+    def build(self, input_shape):
+        C = input_shape[-1]  # channels_last: (B, T, H, W, C)
+        self.C_mvf = int(C * self.alpha)
+        self.C_skip = C - self.C_mvf
 
-        self.conv2d_depthwise = tf.keras.layers.Conv2D(
-            filters=C,
-            kernel_size=(self.kernel_dims, self.kernel_dims),
+        # Define convs for each view (using full convs, no groups)
+        self.conv_T = layers.Conv3D(
+            filters=self.C_mvf,
+            kernel_size=(self.kernel_size, 1, 1),
             padding='same',
-            activation='linear',
-            kernel_regularizer=tf.keras.regularizers.l2(1e-5)
+            use_bias=False
+        )
+        self.conv_H = layers.Conv3D(
+            filters=self.C_mvf,
+            kernel_size=(1, self.kernel_size, 1),
+            padding='same',
+            use_bias=False
+        )
+        self.conv_W = layers.Conv3D(
+            filters=self.C_mvf,
+            kernel_size=(1, 1, self.kernel_size),
+            padding='same',
+            use_bias=False
         )
 
-        self.conv2d_pointwise = tf.keras.layers.Conv2D(
-            filters=self.filters,
-            kernel_size=(1, 1),
-            padding='same',
-            activation='relu',
-            kernel_regularizer=tf.keras.regularizers.l2(1e-5)
-        )
+    def call(self, x):
+        # Split input channels
+        x_mvf, x_skip = tf.split(x, [self.C_mvf, self.C_skip], axis=-1)
 
-        self.conv1d = tf.keras.layers.Conv1D(
-            filters=self.filters,
-            kernel_size=self.kernel_dims,
-            padding='same',
-            activation='relu',
-            kernel_regularizer=tf.keras.regularizers.l2(1e-5)
-        )
+        # Multi-view convs
+        out_T = self.conv_T(x_mvf)
+        out_H = self.conv_H(x_mvf)
+        out_W = self.conv_W(x_mvf)
 
-    def call(self, X):
-        N = tf.shape(X)[0]
-        X = tf.reshape(X, [-1, self.H, self.W, self.C])
-        X = self.conv2d_depthwise(X)
-        X = self.conv2d_pointwise(X)
-        X = tf.reshape(X, [N, self.T, self.H, self.W, self.filters])
-        X = tf.transpose(X, [0, 2, 3, 1, 4])
-        X = tf.reshape(X, [-1, self.T, self.filters])
-        X = self.conv1d(X)
-        X = tf.reshape(X, [N, self.H, self.W, self.T, self.filters])
-        X = tf.transpose(X, [0, 3, 1, 2, 4])
-        return X
+        # Add + activate
+        out = self.activation(out_T + out_H + out_W)
 
-# Instantiate and run
-conv_layer = two_plus_oneDConv(32, 3, H, W, C, T)
-output = conv_layer(dummy_input)
-print("Output shape:", output.shape)
+        # Concat with skip connection
+        return tf.concat([out, x_skip], axis=-1)
+
+x = tf.random.normal((2, 40, 32, 32, 64))  # Example: batch=2
+mvf = MVFModuleChannelsLast(alpha=0.5)
+y = mvf(x)
+print(y.shape)  # ➜ (2, 40, 32, 32, 64)
