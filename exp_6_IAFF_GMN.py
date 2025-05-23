@@ -223,6 +223,8 @@ class TEA_ME(tf.keras.layers.Layer):
 
 ###### Multiple Temporal Aggregation (MTA) Module
 
+###### Multiple Temporal Aggregation (MTA) Module
+
 class TEA_MTA(tf.keras.layers.Layer):
     def __init__(self, N, T, H, W, num_channels):
         super().__init__()
@@ -278,28 +280,37 @@ class TEA_MTA(tf.keras.layers.Layer):
         C = self.num_channels
         split_factor = self.split_factor
 
+        # Split input channels into 4 parts
         Xi_0, Xi_1, Xi_2, Xi_3 = tf.split(X, num_or_size_splits=4, axis=-1)
 
+        # First branch: pass through
         Xo_0 = Xi_0
 
+        # Second branch: temporal + spatial attention
         Xi_1 = tf.keras.layers.Add()([Xo_0, Xi_1])
         Xi_1_reshaped_temp = tf.reshape(Xi_1, [batch_size * T, H * W, split_factor])
         Xi_1_temp = self.grouped_conv1d(Xi_1_reshaped_temp, self.temp_conv1_layers)
-        Xi_1_reshaped_spa = tf.reshape(Xi_1_temp, [batch_size, T, H, W, split_factor])
+        Xi_1_reshaped_spa = tf.reshape(Xi_1_temp, [batch_size * T, H, W, split_factor])
         Xo_1 = self.conv_spa_1(Xi_1_reshaped_spa)
+        Xo_1 = tf.reshape(Xo_1, [batch_size, T, H, W, split_factor])
 
+        # Third branch
         Xi_2 = tf.keras.layers.Add()([Xo_1, Xi_2])
         Xi_2_reshaped_temp = tf.reshape(Xi_2, [batch_size * T, H * W, split_factor])
         Xi_2_temp = self.grouped_conv1d(Xi_2_reshaped_temp, self.temp_conv2_layers)
-        Xi_2_reshaped_spa = tf.reshape(Xi_2_temp, [batch_size, T, H, W, split_factor])
+        Xi_2_reshaped_spa = tf.reshape(Xi_2_temp, [batch_size * T, H, W, split_factor])
         Xo_2 = self.conv_spa_2(Xi_2_reshaped_spa)
+        Xo_2 = tf.reshape(Xo_2, [batch_size, T, H, W, split_factor])
 
+        # Fourth branch
         Xi_3 = tf.keras.layers.Add()([Xo_2, Xi_3])
         Xi_3_reshaped_temp = tf.reshape(Xi_3, [batch_size * T, H * W, split_factor])
         Xi_3_temp = self.grouped_conv1d(Xi_3_reshaped_temp, self.temp_conv3_layers)
-        Xi_3_reshaped_spa = tf.reshape(Xi_3_temp, [batch_size, T, H, W, split_factor])
+        Xi_3_reshaped_spa = tf.reshape(Xi_3_temp, [batch_size * T, H, W, split_factor])
         Xo_3 = self.conv_spa_3(Xi_3_reshaped_spa)
+        Xo_3 = tf.reshape(Xo_3, [batch_size, T, H, W, split_factor])
 
+        # Concatenate all outputs
         Xo = tf.keras.layers.Concatenate(axis=-1)([Xo_0, Xo_1, Xo_2, Xo_3])
 
         return Xo
@@ -781,9 +792,9 @@ model.summary()
 history = model.fit(
     [X_train_rdi, X_train_rai,y_train_onehot], y_train_onehot,
     epochs=30,
-    batch_size=2,
+    batch_size=8,
     validation_data=([X_dev_rdi, X_dev_rai,y_dev_onehot], y_dev_onehot),
-    validation_batch_size=2
+    validation_batch_size=8
 )
 
 

@@ -40,15 +40,15 @@
 ####### Importing Libraries
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 
-plt.switch_backend('agg')
+# plt.switch_backend('agg')
 import tensorflow as tf
 import os
 import gc
 import math
-import pydot
-from sklearn.utils import shuffle
+# import pydot
+# from sklearn.utils import shuffle
 
 ####### Loading Dataset
 
@@ -163,24 +163,26 @@ class TEA_MTA(tf.keras.layers.Layer):
         self.T = T
         self.H = H
         self.W = W
-        split_factor = self.num_channels // 4
+        self.split_factor = self.num_channels // 4
 
-        self.conv_temp_1 = tf.keras.layers.Conv1D(filters=split_factor, kernel_size=3, padding='same',
-                                                  groups=split_factor, activation='relu',
-                                                  kernel_regularizer=tf.keras.regularizers.l2(1e-5))
-        self.conv_spa_1 = tf.keras.layers.Conv2D(filters=split_factor, kernel_size=(3, 3), padding='same',
+        # Replacing grouped Conv1D with standard Conv1D layers
+        self.temp_conv1_layers = [tf.keras.layers.Conv1D(
+            filters=1, kernel_size=3, padding='same', activation='relu',
+            kernel_regularizer=tf.keras.regularizers.l2(1e-5)) for _ in range(self.split_factor)]
+
+        self.temp_conv2_layers = [tf.keras.layers.Conv1D(
+            filters=1, kernel_size=3, padding='same', activation='relu',
+            kernel_regularizer=tf.keras.regularizers.l2(1e-5)) for _ in range(self.split_factor)]
+
+        self.temp_conv3_layers = [tf.keras.layers.Conv1D(
+            filters=1, kernel_size=3, padding='same', activation='relu',
+            kernel_regularizer=tf.keras.regularizers.l2(1e-5)) for _ in range(self.split_factor)]
+
+        self.conv_spa_1 = tf.keras.layers.Conv2D(filters=self.split_factor, kernel_size=(3, 3), padding='same',
                                                  activation='relu', kernel_regularizer=tf.keras.regularizers.l2(1e-5))
-
-        self.conv_temp_2 = tf.keras.layers.Conv1D(filters=split_factor, kernel_size=3, padding='same',
-                                                  groups=split_factor, activation='relu',
-                                                  kernel_regularizer=tf.keras.regularizers.l2(1e-5))
-        self.conv_spa_2 = tf.keras.layers.Conv2D(filters=split_factor, kernel_size=(3, 3), padding='same',
+        self.conv_spa_2 = tf.keras.layers.Conv2D(filters=self.split_factor, kernel_size=(3, 3), padding='same',
                                                  activation='relu', kernel_regularizer=tf.keras.regularizers.l2(1e-5))
-
-        self.conv_temp_3 = tf.keras.layers.Conv1D(filters=split_factor, kernel_size=3, padding='same',
-                                                  groups=split_factor, activation='relu',
-                                                  kernel_regularizer=tf.keras.regularizers.l2(1e-5))
-        self.conv_spa_3 = tf.keras.layers.Conv2D(filters=split_factor, kernel_size=(3, 3), padding='same',
+        self.conv_spa_3 = tf.keras.layers.Conv2D(filters=self.split_factor, kernel_size=(3, 3), padding='same',
                                                  activation='relu', kernel_regularizer=tf.keras.regularizers.l2(1e-5))
 
     def get_config(self):
@@ -194,52 +196,55 @@ class TEA_MTA(tf.keras.layers.Layer):
         })
         return config
 
-    def compute_output_shape(self, input_shape):
-        batch_size = input_shape[0]
-        temporal_dim = input_shape[1]
-        height = input_shape[2]
-        width = input_shape[3]
-        channels = input_shape[4]
-
-        output_height = height
-        output_width = width
-        output_channels = self.num_channels
-
-        return (batch_size, temporal_dim, output_height, output_width, output_channels)
+    def grouped_conv1d(self, x, conv_layers):
+        # x: [B, L, C], conv_layers: list of Conv1D layers for each channel
+        x_splits = tf.split(x, num_or_size_splits=self.split_factor, axis=-1)
+        out_splits = [conv_layer(split) for conv_layer, split in zip(conv_layers, x_splits)]
+        return tf.concat(out_splits, axis=-1)
 
     def call(self, X):
-        batch_size = tf.shape(X)[0]  # Dynamically compute batch size
-        T = X.shape[1]
-        H = X.shape[2]
-        W = X.shape[3]
-        C = X.shape[4]
-        split_factor = C // 4
+        batch_size = tf.shape(X)[0]
+        T = self.T
+        H = self.H
+        W = self.W
+        C = self.num_channels
+        split_factor = self.split_factor
 
+        # Split input channels into 4 parts
         Xi_0, Xi_1, Xi_2, Xi_3 = tf.split(X, num_or_size_splits=4, axis=-1)
 
+        # First branch: pass through
         Xo_0 = Xi_0
 
+        # Second branch: temporal + spatial attention
         Xi_1 = tf.keras.layers.Add()([Xo_0, Xi_1])
-        Xi_1_reshaped_temp = tf.reshape(Xi_1, [batch_size * T, H * W, split_factor])  #
-        Xi_1_temp = self.conv_temp_1(Xi_1_reshaped_temp)
-        Xi_1_reshaped_spa = tf.reshape(Xi_1_temp, [batch_size, T, H, W, split_factor])  #
+        Xi_1_reshaped_temp = tf.reshape(Xi_1, [batch_size * T, H * W, split_factor])
+        Xi_1_temp = self.grouped_conv1d(Xi_1_reshaped_temp, self.temp_conv1_layers)
+        Xi_1_reshaped_spa = tf.reshape(Xi_1_temp, [batch_size * T, H, W, split_factor])
         Xo_1 = self.conv_spa_1(Xi_1_reshaped_spa)
+        Xo_1 = tf.reshape(Xo_1, [batch_size, T, H, W, split_factor])
 
+        # Third branch
         Xi_2 = tf.keras.layers.Add()([Xo_1, Xi_2])
-        Xi_2_reshaped_temp = tf.reshape(Xi_2, [batch_size * T, H * W, split_factor])  #
-        Xi_2_temp = self.conv_temp_2(Xi_2_reshaped_temp)
-        Xi_2_reshaped_spa = tf.reshape(Xi_2_temp, [batch_size, T, H, W, split_factor])  #
+        Xi_2_reshaped_temp = tf.reshape(Xi_2, [batch_size * T, H * W, split_factor])
+        Xi_2_temp = self.grouped_conv1d(Xi_2_reshaped_temp, self.temp_conv2_layers)
+        Xi_2_reshaped_spa = tf.reshape(Xi_2_temp, [batch_size * T, H, W, split_factor])
         Xo_2 = self.conv_spa_2(Xi_2_reshaped_spa)
+        Xo_2 = tf.reshape(Xo_2, [batch_size, T, H, W, split_factor])
 
+        # Fourth branch
         Xi_3 = tf.keras.layers.Add()([Xo_2, Xi_3])
-        Xi_3_reshaped_temp = tf.reshape(Xi_3, [batch_size * T, H * W, split_factor])  #
-        Xi_3_temp = self.conv_temp_3(Xi_3_reshaped_temp)
-        Xi_3_reshaped_spa = tf.reshape(Xi_3_temp, [batch_size, T, H, W, split_factor])  #
+        Xi_3_reshaped_temp = tf.reshape(Xi_3, [batch_size * T, H * W, split_factor])
+        Xi_3_temp = self.grouped_conv1d(Xi_3_reshaped_temp, self.temp_conv3_layers)
+        Xi_3_reshaped_spa = tf.reshape(Xi_3_temp, [batch_size * T, H, W, split_factor])
         Xo_3 = self.conv_spa_3(Xi_3_reshaped_spa)
+        Xo_3 = tf.reshape(Xo_3, [batch_size, T, H, W, split_factor])
 
+        # Concatenate all outputs
         Xo = tf.keras.layers.Concatenate(axis=-1)([Xo_0, Xo_1, Xo_2, Xo_3])
 
         return Xo
+
 
 ####### CT-Module
 
@@ -313,27 +318,42 @@ class CT_Module(tf.keras.layers.Layer):
 ####### (2+1)D Convolutional Layer
 
 class two_plus_oneDConv(tf.keras.layers.Layer):
-    """ Implementation of(2+1)D Conv """
-
     def __init__(self, filters, kernel_dims, H, W, C, T):
-        #### Defining Essentials
         super().__init__()
-        self.filters = filters  # Number of Filters in the Output
-        self.kernel_dims = kernel_dims  # Dimensions of the Kernel
-        self.H = H  # Height of the Input
-        self.W = W  # Width of the Input
-        self.C = C  # Number of Channels in the Input
-        self.T = T  # Number of Frames in the Input
+        self.filters = filters
+        self.kernel_dims = kernel_dims
+        self.H = H
+        self.W = W
+        self.C = C
+        self.T = T
 
-        #### Defining Layers
-        self.conv2d_depthwise = tf.keras.layers.Conv2D(filters=self.C, kernel_size=(self.kernel_dims, self.kernel_dims),
-                                                       padding='same', activation='linear', groups=self.C,
-                                                       kernel_regularizer=tf.keras.regularizers.l2(1e-5))
-        self.conv2d_pointwise = tf.keras.layers.Conv2D(filters=self.filters, kernel_size=(1, 1),
-                                                       padding='same', activation='relu',
-                                                       kernel_regularizer=tf.keras.regularizers.l2(1e-5))
-        self.conv1d = tf.keras.layers.Conv1D(filters=self.filters, kernel_size=self.kernel_dims, padding='same',
-                                             activation='relu', kernel_regularizer=tf.keras.regularizers.l2(1e-5))
+        self.depthwise_conv = tf.keras.layers.DepthwiseConv2D(
+            kernel_size=(self.kernel_dims, self.kernel_dims),
+            padding='same',
+            activation='linear',
+            depth_multiplier=1
+        )
+
+        self.pointwise_conv = tf.keras.layers.Conv2D(
+            filters=self.filters,
+            kernel_size=(1, 1),
+            padding='same',
+            activation='relu',
+            kernel_regularizer=tf.keras.regularizers.l2(1e-5)
+        )
+
+        self.conv1d = tf.keras.layers.Conv1D(
+            filters=self.filters,
+            kernel_size=self.kernel_dims,
+            padding='same',
+            activation='relu',
+            kernel_regularizer=tf.keras.regularizers.l2(1e-5)
+        )
+
+    def build(self, input_shape):
+        # Apply the regularizer after the layer is built
+        if hasattr(self.depthwise_conv, 'depthwise_kernel_regularizer'):
+            self.depthwise_conv.depthwise_kernel_regularizer = tf.keras.regularizers.l2(1e-5)
 
     def get_config(self):
         config = super().get_config().copy()
@@ -348,23 +368,22 @@ class two_plus_oneDConv(tf.keras.layers.Layer):
         return config
 
     def call(self, X):
-        """
-        Implementation of (2+1)D Convolution
+        X_reshaped = tf.reshape(X, [-1, self.H, self.W, self.C])
+        X_conv2d = self.depthwise_conv(X_reshaped)
+        X_conv2d = self.pointwise_conv(X_conv2d)
 
-        INPUTS:-
-        1) X : Input Tensor of Shape [N,T,H,W,C] (Implementation involves 'Channel Last' Strategy)
+        X_conv2d = tf.reshape(X_conv2d, [-1, self.T, self.H * self.W, self.filters])
+        X_conv2d = tf.transpose(X_conv2d, perm=[0, 2, 1, 3])
+        X_flat = tf.reshape(X_conv2d, [-1, self.T, self.filters])
+        X_conv1d = self.conv1d(X_flat)
 
-        OUTPUTS:-H
-        1) X_o : Tensor of shape [N,T,H,W,C]
-
-        """
-        X = self.conv2d_depthwise(X)
-        X = self.conv2d_pointwise(X)
-        X = tf.keras.layers.Reshape((self.H * self.W, self.T, self.filters))(X)
-        X = self.conv1d(X)
-        X_o = tf.keras.layers.Reshape((self.T, self.H, self.W, self.filters))(X)
+        X_conv1d = tf.reshape(X_conv1d, [-1, self.H * self.W, self.T, self.filters])
+        X_conv1d = tf.transpose(X_conv1d, perm=[0, 2, 1, 3])
+        X_o = tf.reshape(X_conv1d, [-1, self.T, self.H, self.W, self.filters])
 
         return X_o
+
+
 
 
 class Cross_MSECA_Module(tf.keras.layers.Layer):
@@ -527,19 +546,19 @@ conv23_rdi = CT_Module(40, 32, 32, 64)
 
 #### RAI
 conv11_rai = two_plus_oneDConv(32, 3, 32, 32, 1, 40)
-conv12_rai = two_plus_oneDConv(32, 3, 32, 32, 32 + 5, 40)
-conv13_rai = two_plus_oneDConv(32, 3, 32, 32, 32 + 32 + 5, 40)
+conv12_rai = two_plus_oneDConv(32, 3, 32, 32, 32 + 1, 40)
+conv13_rai = two_plus_oneDConv(32, 3, 32, 32, 32 + 32 + 1, 40)
 
 conv21_rai = two_plus_oneDConv(64, 3, 32, 32, 32, 40)
 conv22_rai = two_plus_oneDConv(64, 3, 32, 32, 64 + 32, 40)
-conv23_rai = two_plus_oneDConv(64, 3, 32, 32, 64 + 64 + 32, 40)
+conv23_rai = two_plus_oneDConv(64, 3, 32, 32, 160, 40)
 
 ##### Channel Attention Module
 # jlce_module = JLCE(1,5,64)
 # cam3d = CAM3D(128,40,32,32,1)
 # eca_module = ECA_Module(40,32,32,128,1,1)
 # optisecam3d_shuffle = OptiSECAM3D_Shuffle(128,1)
-cross_mseca_module = Cross_MSECA_Module(40, 32, 32,32, 3)
+cross_mseca_module = Cross_MSECA_Module(40, 32, 32, 128, 3)
 
 ##### TEA
 #### TEA-1
@@ -567,7 +586,7 @@ conv2_TEA3 = tf.keras.layers.Conv2D(filters=128, kernel_size=(1, 1), padding='sa
                                     activation='relu', kernel_regularizer=tf.keras.regularizers.l2(1e-5))
 
 ##### ArcFace Loss
-arc_logit_layer = ArcFace(11, 30.0, 0.2, tf.keras.regularizers.l2(1e-4))
+arc_logit_layer = ArcFace(11, 30.0, 0.3, tf.keras.regularizers.l2(1e-4))
 
 ###### Defining Model
 
@@ -578,16 +597,14 @@ Input_Labels = tf.keras.layers.Input(shape=(11,))
 # Input_Layer_rdi = tf.keras.layers.Input(shape=(None, H, W, C_rdi))
 # Input_Layer_rdi = tf.keras.layers.Input(shape=(40, 32, 32, 4))  # Fix temporal dimension
 # Input_Labels = tf.keras.layers.Input(shape=(11,))
-#### Concatenation Operation
-conv23 = tf.keras.layers.Concatenate(axis=-1)([Input_Layer_rdi,Input_Layer_rai])
 
 
 ##### Conv Layers
 
 #### RDI
 ### Tensorized Residual Block - 1
-print("input_layer_rdi",conv23.shape)
-conv_up1 = conv_up1(conv23)
+print("input_layer_rdi",Input_Layer_rdi.shape)
+conv_up1 = conv_up1(Input_Layer_rdi)
 print("conv_up1 size",conv_up1.shape)
 conv11_rdi = conv11_rdi(conv_up1)
 conv12_rdi = conv12_rdi(conv11_rdi)
@@ -610,8 +627,8 @@ conv23_rdi = tf.keras.layers.Add()([conv23_rdi, conv21_rdi])
 
 #### RAI
 ### Dense Block - 1
-conv11_rai = conv11_rai(conv23)
-conv11_rai = tf.keras.layers.Concatenate(axis=-1)([conv11_rai,conv23])
+conv11_rai = conv11_rai(Input_Layer_rai)
+conv11_rai = tf.keras.layers.Concatenate(axis=-1)([conv11_rai,Input_Layer_rai])
 conv12_rai = conv12_rai(conv11_rai)
 conv12_rai = tf.keras.layers.Concatenate(axis=-1)([conv12_rai,conv11_rai])
 conv13_rai = conv13_rai(conv12_rai)
@@ -623,17 +640,18 @@ conv22_rai = conv22_rai(conv21_rai)
 conv22_rai = tf.keras.layers.Concatenate(axis=-1)([conv22_rai,conv21_rai])
 conv23_rai = conv23_rai(conv22_rai)
 
-
+#### Concatenation Operation
+# conv23 = tf.keras.layers.Concatenate(axis=-1)([conv23_rdi,conv23_rai])
 
 # ##### Channel Attention
 # print("entering into the mesca modeule  !!!!!")
-# print("size entering the mesca module",conv13_rdi.shape)
-# conv23_cross_mseca = cross_mseca_module(conv13_rdi)
+# print("size entering the mesca module ",conv23.shape)
+# conv23_cross_mseca = cross_mseca_module(conv23)
 # print("left the cross mesca module !!!!!!!!!!!!!!!!!!!!!!!!")
 # print("after the mesca modeule ",conv23_cross_mseca.shape)
-# conv23_cross_mseca = tf.keras.layers.Add()([conv23_cross_mseca, conv13_rdi])
-
-# optisecam3d_shuffle_op = optisecam3d_shuffle(conv23)
+# conv23_cross_mseca = tf.keras.layers.Add()([conv23_cross_mseca, conv23])
+#
+# # optisecam3d_shuffle_op = optisecam3d_shuffle(conv23)
 
 #### TEA-1
 # print(f"conv23_cross_mesra {conv23_cross_mseca.shape}")
@@ -646,10 +664,11 @@ def safe_reshape(x, shape):
 flatten_temporal = tf.keras.layers.Lambda(lambda x: tf.reshape(x, (-1, x.shape[2], x.shape[3], x.shape[4])))
 restore_shape = tf.keras.layers.Lambda(lambda x: tf.reshape(x, (-1, 40, x.shape[1], x.shape[2], x.shape[3])))
 
+# Apply the Conv2D
 
-##### RDI WALA GMN
-# Apply the Conv2D layer
-# print("conv23_cross_mesca",conv23_rdi.shape)
+##### GMN for RDI Branch
+
+print("RDI Backbone Output ",conv23_rdi.shape)
 conv1_tea1 = flatten_temporal(conv23_rdi)  # Flatten
 conv1_tea1 = conv1_TEA1(conv1_tea1)
 conv1_tea1 = restore_shape(conv1_tea1)  # Restore
@@ -683,13 +702,12 @@ conv1_tea3 = restore_shape(conv1_tea3)
 tea_mta3 = TEA_MTA_3(conv1_tea3)
 tea_mta3 = flatten_temporal(tea_mta3)
 conv2_tea3 = conv2_TEA3(tea_mta3)
-conv2_tea3 = restore_shape(conv2_tea3)
+conv_rdi_gmn  = restore_shape(conv2_tea3)
 
-rdi_gmn_out=conv2_tea3
 
-##### RAI WALA GMN
-# Apply the Conv2D layer
-# print("conv23_cross_mesca",conv23_rdi.shape)
+##### GMN for RAI Branch
+
+print("RAI Backbone Output ",conv23_rai.shape)
 conv1_tea1 = flatten_temporal(conv23_rai)  # Flatten
 conv1_tea1 = conv1_TEA1(conv1_tea1)
 conv1_tea1 = restore_shape(conv1_tea1)  # Restore
@@ -723,17 +741,14 @@ conv1_tea3 = restore_shape(conv1_tea3)
 tea_mta3 = TEA_MTA_3(conv1_tea3)
 tea_mta3 = flatten_temporal(tea_mta3)
 conv2_tea3 = conv2_TEA3(tea_mta3)
-conv2_tea3 = restore_shape(conv2_tea3)
+conv_rai_gmn  = restore_shape(conv2_tea3)
 
-rai_gmn_out=conv2_tea3
 
-#tea3_op = tf.keras.layers.Add()([conv2_tea3, tea2_op])
-
-rdi_rai_gmn_con=tf.keras.layers.Concatenate(axis=-1)([rdi_gmn_out,rai_gmn_out])
+tea3_op = tf.keras.layers.Add()([conv_rdi_gmn,conv_rai_gmn])
 
 #print(f"GMN BAAD WALI BRANCH {tea3_op.shape}")
 #### Output Layer
-gap_op = tf.keras.layers.GlobalAveragePooling3D()(rdi_rai_gmn_con)
+gap_op = tf.keras.layers.GlobalAveragePooling3D()(tea3_op)
 dense1 = tf.keras.layers.Dense(256, activation='relu')(gap_op)
 dropout1 = tf.keras.layers.Dropout(rate=0.2)(dense1)
 
@@ -770,13 +785,12 @@ history = model.fit(
 
 
 ##### Saving Training Metrics
-np.save('exp_3_(rdi+rai)_rdi_mesca_gmn.npy', history.history)
+np.save('exp_4_(rdi+rai)_parallel_(RDI+GMN)_history.npy', history.history)
 
 # Save only the architecture
 model_json = model.to_json()
-with open("exp_3_(rdi+rai)_rdi_mesca_gmn_architecture.json", "w") as json_file:
+with open("exp_4_(rdi+rai)_parallel_(RDI+GMN)_architecture.json", "w") as json_file:
     json_file.write(model_json)
 
 # Save only the weights
-model.save_weights("exp_3_(rdi+rai)_rdi_mesca_gmn_weights.h5")
-
+model.save_weights("exp_4_(rdi+rai)_parallel_(RDI+GMN).weights.h5")
