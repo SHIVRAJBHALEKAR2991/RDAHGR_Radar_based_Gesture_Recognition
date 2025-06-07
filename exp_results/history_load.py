@@ -1,35 +1,17 @@
 import numpy as np
-import matplotlib.pyplot as plt
 
 # Load the history dictionary
-history_path = 'exp5/exp_5_rai_rdi_swap_history.npy'
+history_path = 'exp6/exp_6_IAFF_GMN_history.npy'
 history = np.load(history_path, allow_pickle=True).item()
 
-# Plot and save loss curve
-plt.figure()
-plt.plot(history['loss'], label='train loss')
-if 'val_loss' in history:
-    plt.plot(history['val_loss'], label='val loss')
-plt.title('Model Loss')
-plt.xlabel('Epoch')
-plt.ylabel('Loss')
-plt.legend()
-plt.grid(True)
-plt.savefig('exp5_loss_curve.png')   # ← saved here
-plt.close()
+# Find the epoch with the best validation accuracy
+best_val_acc = max(history['val_accuracy'])
+best_epoch = history['val_accuracy'].index(best_val_acc)
 
-# Plot and save accuracy curve (if present)
-if 'accuracy' in history:
-    plt.figure()
-    plt.plot(history['accuracy'], label='train acc')
-    if 'val_accuracy' in history:
-        plt.plot(history['val_accuracy'], label='val acc')
-    plt.title('Model Accuracy')
-    plt.xlabel('Epoch')
-    plt.ylabel('Accuracy')
-    plt.legend()
-    plt.grid(True)
-    plt.savefig('exp5_accuracy_curve.png')   # ← saved here
-    plt.close()
-
-print("Saved plots as 'loss_curve.png' and 'accuracy_curve.png'")
+# Print the corresponding values
+print("=== Best Validation Accuracy ===")
+print(f"Epoch         : {best_epoch + 1}")
+print(f"Val Accuracy  : {history['val_accuracy'][best_epoch]:.4f}")
+print(f"Train Accuracy: {history['accuracy'][best_epoch]:.4f}")
+print(f"Val Loss      : {history['val_loss'][best_epoch]:.4f}")
+print(f"Train Loss    : {history['loss'][best_epoch]:.4f}")
