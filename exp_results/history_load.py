@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # Load the history dictionary
-history_path = 'exp7/exp_7_hsi_replace_mesca_history.npy'
+history_path = 'exp 8/exp_8_caa_gmn_history.npy'
 history = np.load(history_path, allow_pickle=True).item()
 
 # Find the epoch with the best validation accuracy
