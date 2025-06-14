@@ -529,6 +529,58 @@ class ArcFace(tf.keras.layers.Layer):
     def compute_output_shape(self, input_shape):
         return (None, self.n_classes)
 
+import tensorflow as tf
+
+class M3NetMatchingBlock(tf.keras.layers.Layer):
+    """
+    Self-attention + deep FFN block with ~230K parameters.
+    Input & Output: (B, T, H, W, C)
+    """
+    def __init__(self, C):
+        super().__init__()
+        self.C = C
+        self.proj_dim = C  # Q/K: 128-d
+
+        self.query_proj = tf.keras.layers.Dense(self.proj_dim, use_bias=False)  # 16K
+        self.key_proj = tf.keras.layers.Dense(self.proj_dim, use_bias=False)    # 16K
+        self.value_proj = tf.keras.layers.Dense(C, use_bias=False)              # 16K
+
+        # Deep FFN block: 128 → 640 → 128
+        self.ffn_expand = tf.keras.layers.Dense(C * 5, activation='relu')       # 128×640 = 81K
+        self.ffn_compress = tf.keras.layers.Dense(C)                            # 640×128 = 81K
+
+        # Optional output transformation
+        self.output_proj = tf.keras.layers.Dense(C)                             # 16K
+
+        self.softmax = tf.keras.layers.Softmax(axis=-1)
+
+    def call(self, x):
+        B = tf.shape(x)[0]
+        T = tf.shape(x)[1]
+        H = tf.shape(x)[2]
+        W = tf.shape(x)[3]
+        C = x.shape[-1]
+
+        x_seq = tf.reshape(x, [B, T * H * W, C])  # (B, THW, C)
+
+        Q = self.query_proj(x_seq)
+        K = self.key_proj(x_seq)
+        V = self.value_proj(x_seq)
+
+        dk = tf.cast(tf.shape(Q)[-1], tf.float32)
+        attn_logits = tf.matmul(Q, K, transpose_b=True) / tf.math.sqrt(dk)
+        attn_weights = self.softmax(attn_logits)
+        attn_out = tf.matmul(attn_weights, V)
+
+        # Residual + FFN
+        out = attn_out + x_seq
+        out = self.ffn_expand(out)
+        out = self.ffn_compress(out)
+
+        # Final optional transform (128 → 128)
+        out = self.output_proj(out)
+
+        return tf.reshape(out, [B, T, H, W, C])
 
 ####### Model Training
 
@@ -666,63 +718,62 @@ print("after the mesca modeule ",conv23_cross_mseca.shape)
 conv23_cross_mseca = tf.keras.layers.Add()([conv23_cross_mseca, conv23])
 
 # optisecam3d_shuffle_op = optisecam3d_shuffle(conv23)
-
-#### TEA-1
-# print(f"conv23_cross_mesra {conv23_cross_mseca.shape}")
-def safe_reshape(x, shape):
-    # print("Before Reshape:", x.shape)|
-    reshaped_x = tf.reshape(x, shape)
-    # print("After Reshape:", reshaped_x.shape)
-    return reshaped_x
-
-flatten_temporal = tf.keras.layers.Lambda(lambda x: tf.reshape(x, (-1, x.shape[2], x.shape[3], x.shape[4])))
-restore_shape = tf.keras.layers.Lambda(lambda x: tf.reshape(x, (-1, 40, x.shape[1], x.shape[2], x.shape[3])))
-
-# Apply the Conv2D layer
-print("conv23_cross_mesca",conv23_cross_mseca.shape)
-conv1_tea1 = flatten_temporal(conv23_cross_mseca)  # Flatten
-conv1_tea1 = conv1_TEA1(conv1_tea1)
-conv1_tea1 = restore_shape(conv1_tea1)  # Restore
-
-tea_mta1 = TEA_MTA_1(conv1_tea1)
-reshaped_tea_mta1 = flatten_temporal(tea_mta1)  # Flatten
-conv2_tea1_temp = conv2_TEA1(reshaped_tea_mta1)
-conv2_tea1 = restore_shape(conv2_tea1_temp)  # Restore
-print("conv1_tea1",conv1_tea1.shape,"conv2_tea1",conv2_tea1.shape)
-#tea1_op = tf.keras.layers.Add()([conv1_tea1, conv2_tea1])
-
-#### TEA-2
-#print("tea1_op",tea1_op.shape)
-tea1_op_reshaped = flatten_temporal(conv2_tea1)
-conv1_tea2 = conv1_TEA2(tea1_op_reshaped)
-conv1_tea2 = restore_shape(conv1_tea2)
-
-tea_mta2 = TEA_MTA_2(conv1_tea2)
-tea_mta2 = flatten_temporal(tea_mta2)
-conv2_tea2 = conv2_TEA2(tea_mta2)
-conv2_tea2 = restore_shape(conv2_tea2)
-
-#print("conv2_tea2",conv2_tea2.shape,"tea1_op",tea1_op.shape)
-#tea2_op = tf.keras.layers.Add()([conv2_tea2, tea1_op])
-
-#### TEA-3
-tea2_op = flatten_temporal(conv2_tea2)
-conv1_tea3 = conv1_TEA3(tea2_op)
-conv1_tea3 = restore_shape(conv1_tea3)
-
-tea_mta3 = TEA_MTA_3(conv1_tea3)
-tea_mta3 = flatten_temporal(tea_mta3)
-conv2_tea3 = conv2_TEA3(tea_mta3)
-conv2_tea3 = restore_shape(conv2_tea3)
+m3net_match_out = M3NetMatchingBlock(C=128)(conv23_cross_mseca)
+# #### TEA-1
+# # print(f"conv23_cross_mesra {conv23_cross_mseca.shape}")
+# def safe_reshape(x, shape):
+#     # print("Before Reshape:", x.shape)|
+#     reshaped_x = tf.reshape(x, shape)
+#     # print("After Reshape:", reshaped_x.shape)
+#     return reshaped_x
+#
+# flatten_temporal = tf.keras.layers.Lambda(lambda x: tf.reshape(x, (-1, x.shape[2], x.shape[3], x.shape[4])))
+# restore_shape = tf.keras.layers.Lambda(lambda x: tf.reshape(x, (-1, 40, x.shape[1], x.shape[2], x.shape[3])))
+#
+# # Apply the Conv2D layer
+# print("conv23_cross_mesca",conv23_cross_mseca.shape)
+# conv1_tea1 = flatten_temporal(conv23_cross_mseca)  # Flatten
+# conv1_tea1 = conv1_TEA1(conv1_tea1)
+# conv1_tea1 = restore_shape(conv1_tea1)  # Restore
+#
+# tea_mta1 = TEA_MTA_1(conv1_tea1)
+# reshaped_tea_mta1 = flatten_temporal(tea_mta1)  # Flatten
+# conv2_tea1_temp = conv2_TEA1(reshaped_tea_mta1)
+# conv2_tea1 = restore_shape(conv2_tea1_temp)  # Restore
+# print("conv1_tea1",conv1_tea1.shape,"conv2_tea1",conv2_tea1.shape)
+# #tea1_op = tf.keras.layers.Add()([conv1_tea1, conv2_tea1])
+#
+# #### TEA-2
+# #print("tea1_op",tea1_op.shape)
+# tea1_op_reshaped = flatten_temporal(conv2_tea1)
+# conv1_tea2 = conv1_TEA2(tea1_op_reshaped)
+# conv1_tea2 = restore_shape(conv1_tea2)
+#
+# tea_mta2 = TEA_MTA_2(conv1_tea2)
+# tea_mta2 = flatten_temporal(tea_mta2)
+# conv2_tea2 = conv2_TEA2(tea_mta2)
+# conv2_tea2 = restore_shape(conv2_tea2)
+#
+# #print("conv2_tea2",conv2_tea2.shape,"tea1_op",tea1_op.shape)
+# #tea2_op = tf.keras.layers.Add()([conv2_tea2, tea1_op])
+#
+# #### TEA-3
+# tea2_op = flatten_temporal(conv2_tea2)
+# conv1_tea3 = conv1_TEA3(tea2_op)
+# conv1_tea3 = restore_shape(conv1_tea3)
+#
+# tea_mta3 = TEA_MTA_3(conv1_tea3)
+# tea_mta3 = flatten_temporal(tea_mta3)
+# conv2_tea3 = conv2_TEA3(tea_mta3)
+# conv2_tea3 = restore_shape(conv2_tea3)
 
 #tea3_op = tf.keras.layers.Add()([conv2_tea3, tea2_op])
 
 #print(f"GMN BAAD WALI BRANCH {tea3_op.shape}")
-
-print(f" shape output to the general layers {conv2_tea3.shape}")
-exit()
 #### Output Layer
-gap_op = tf.keras.layers.GlobalAveragePooling3D()(conv2_tea3)
+# print(f" Output of GMN module {conv2_tea3.shape}")
+# exit()
+gap_op = tf.keras.layers.GlobalAveragePooling3D()(m3net_match_out)
 dense1 = tf.keras.layers.Dense(256, activation='relu')(gap_op)
 dropout1 = tf.keras.layers.Dropout(rate=0.2)(dense1)
 

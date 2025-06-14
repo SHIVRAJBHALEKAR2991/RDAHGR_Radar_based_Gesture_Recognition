@@ -530,6 +530,155 @@ class ArcFace(tf.keras.layers.Layer):
         return (None, self.n_classes)
 
 
+import tensorflow as tf
+
+
+class DPFF_Module(tf.keras.layers.Layer):
+    """
+    Dual-Polarization Feature Fusion (DPFF) Module — Reduced Parameters
+    Inputs:
+        - F1: Tensor of shape (None, 40, 32, 32, 64) — VV-like feature
+        - F2: Tensor of shape (None, 40, 32, 32, 64) — VH-like feature
+    Output:
+        - Tensor of shape (None, 40, 32, 32, 96)
+    """
+
+    def __init__(self, name='dpff_module'):
+        super(DPFF_Module, self).__init__(name=name)
+
+        # Reduced channel counts for lightweight computation
+        self.conv_1x1 = tf.keras.layers.Conv3D(24, kernel_size=(1, 1, 1), padding='same', activation='relu')
+        self.conv_3x3 = tf.keras.layers.Conv3D(32, kernel_size=(3, 3, 3), padding='same', activation='relu')
+
+        # Replace 5x5x5 with stacked 3x3x3 for fewer params and similar receptive field
+        self.conv_5x5 = tf.keras.Sequential([
+            tf.keras.layers.Conv3D(32, kernel_size=(3, 3, 3), padding='same', activation='relu'),
+            tf.keras.layers.Conv3D(32, kernel_size=(3, 3, 3), padding='same', activation='relu')
+        ])
+
+    def call(self, F1, F2):
+        # Coherence Feature: abs(F1 * F2)
+        F_coherence = tf.math.abs(F1 * F2)
+
+        # Concatenate inputs and coherence
+        F_combined = tf.concat([F1, F2, F_coherence], axis=-1)  # Shape: (None, 40, 32, 32, 192)
+
+        # Inception-style reduced convs
+        x1 = self.conv_1x1(F_combined)  # (None, ..., 24)
+        x3 = self.conv_3x3(F_combined)  # (None, ..., 32)
+        x5 = self.conv_5x5(F_combined)  # (None, ..., 32)
+
+        # Output: 24 + 32 + 32 = 88 channels
+        F_fused = tf.concat([x1, x3, x5], axis=-1)  # Shape: (None, 40, 32, 32, 88)
+
+        return F_fused
+
+####Squeeze and Excitation
+import tensorflow as tf
+
+class SE_Block(tf.keras.layers.Layer):
+    def __init__(self, reduction_ratio=8, name='se_block'):  # changed from 2 → 8
+        super(SE_Block, self).__init__(name=name)
+        self.reduction_ratio = reduction_ratio
+
+    def build(self, input_shape):
+        C = input_shape[-1]
+        reduced_C = max(1, C // self.reduction_ratio)  # Ensure at least 1
+        self.global_avg_pool = tf.keras.layers.GlobalAveragePooling3D()
+        self.fc1 = tf.keras.layers.Dense(reduced_C, activation='relu', use_bias=False)
+        self.fc2 = tf.keras.layers.Dense(C, activation='sigmoid', use_bias=False)
+        self.reshape = tf.keras.layers.Reshape((1, 1, 1, C))
+
+    def call(self, inputs):
+        x = self.global_avg_pool(inputs)
+        x = self.fc1(x)
+        x = self.fc2(x)
+        x = self.reshape(x)
+        return inputs * x  # scale
+
+class LaplacianResidual(tf.keras.layers.Layer):
+    """
+    Lightweight Residual block for Laplacian levels
+    Reduces number of parameters using 1x1x1 bottleneck and smaller filter count.
+    """
+    def __init__(self, filters, reduction=2):
+        super().__init__()
+        reduced_filters = max(4, filters // reduction)
+
+        self.conv1 = tf.keras.layers.Conv3D(
+            reduced_filters, kernel_size=(1, 1, 1), padding='same', activation='relu'
+        )
+        self.conv2 = tf.keras.layers.Conv3D(
+            reduced_filters, kernel_size=(3, 3, 3), padding='same', activation='relu'
+        )
+        self.conv3 = tf.keras.layers.Conv3D(
+            filters, kernel_size=(1, 1, 1), padding='same', activation=None
+        )
+        self.relu = tf.keras.layers.ReLU()
+
+    def call(self, x):
+        identity = x
+        x = self.conv1(x)
+        x = self.conv2(x)
+        x = self.conv3(x)
+        return self.relu(x + identity)
+
+class LPN_Block(tf.keras.layers.Layer):
+    def __init__(self, filters, name='lpn_block'):
+        super().__init__(name=name)
+        self.filters = filters
+
+        # Gaussian downsampling
+        self.down = tf.keras.layers.AveragePooling3D(pool_size=(1, 2, 2), padding='same')
+
+        # Lightweight upsampling: UpSampling + Conv3D (less parameters)
+        self.up1 = tf.keras.Sequential([
+            tf.keras.layers.UpSampling3D(size=(1, 2, 2)),
+            tf.keras.layers.Conv3D(filters, kernel_size=(1, 3, 3), padding='same', activation='relu')
+        ])
+
+        self.up2 = tf.keras.Sequential([
+            tf.keras.layers.UpSampling3D(size=(1, 2, 2)),
+            tf.keras.layers.Conv3D(filters, kernel_size=(1, 3, 3), padding='same', activation='relu')
+        ])
+
+        # Residual processing blocks with reduced filters at lower scales
+        self.res1 = LaplacianResidual(filters)
+        self.res2 = LaplacianResidual(filters // 2)
+        self.res3 = LaplacianResidual(filters // 4)
+
+        # Projection layers to match channel dimensions if needed
+        self.proj2 = tf.keras.layers.Conv3D(filters, kernel_size=1, padding='same')
+        self.proj3 = tf.keras.layers.Conv3D(filters, kernel_size=1, padding='same')
+
+        self.add = tf.keras.layers.Add()
+
+    def call(self, x):
+        G0 = x
+        G1 = self.down(G0)
+        G2 = self.down(G1)
+
+        L0 = G0 - self.up1(G1)
+        L1 = G1 - self.up1(G2)
+        L2 = G2
+
+        L0 = self.res1(L0)
+        L1 = self.res2(L1)
+        L2 = self.res3(L2)
+
+        # Upsample and align channel dims
+        L1_up = self.up1(L1)
+        L1_up = self.proj2(L1_up)
+
+        L2_up = self.up2(self.up2(L2))
+        L2_up = self.proj3(L2_up)
+
+        fused = self.add([L0, L1_up, L2_up])
+        return fused
+
+
+
+
 ####### Model Training
 
 ####### Defining Layers and Model
@@ -598,6 +747,15 @@ conv1_TEA3 = tf.keras.layers.Conv2D(filters=128, kernel_size=(1, 1), padding='sa
 TEA_MTA_3 = TEA_MTA(2, 40, 32, 32, 128)
 conv2_TEA3 = tf.keras.layers.Conv2D(filters=128, kernel_size=(1, 1), padding='same',
                                     activation='relu', kernel_regularizer=tf.keras.regularizers.l2(1e-5))
+###### DPFF
+dpff_layer = DPFF_Module()
+
+#### Squeeze and excitation module
+se_module = SE_Block(reduction_ratio=2)
+
+####LPN INITIALISATION
+
+lpn = LPN_Block(filters=128)
 
 ##### ArcFace Loss
 arc_logit_layer = ArcFace(11, 30.0, 0.3, tf.keras.regularizers.l2(1e-4))
@@ -654,16 +812,24 @@ conv22_rai = conv22_rai(conv21_rai)
 conv22_rai = tf.keras.layers.Concatenate(axis=-1)([conv22_rai,conv21_rai])
 conv23_rai = conv23_rai(conv22_rai)
 
+print(f"rdi backbone out {conv23_rdi.shape} rai backbone out {conv23_rai.shape}")
 #### Concatenation Operation
 conv23 = tf.keras.layers.Concatenate(axis=-1)([conv23_rdi,conv23_rai])
 
-##### Channel Attention
-print("entering into the mesca modeule  !!!!!")
-print("size entering the mesca module ",conv23.shape)
-conv23_cross_mseca = cross_mseca_module(conv23)
-print("left the cross mesca module !!!!!!!!!!!!!!!!!!!!!!!!")
-print("after the mesca modeule ",conv23_cross_mseca.shape)
-conv23_cross_mseca = tf.keras.layers.Add()([conv23_cross_mseca, conv23])
+#### DPFF Operation
+# conv23 = dpff_layer(conv23_rdi,conv23_rai)
+# ##### Channel Attention
+# print("entering into the mesca modeule  !!!!!")
+# print("size entering the mesca module ",conv23.shape)
+# conv23_cross_mseca = cross_mseca_module(conv23)
+# print("left the cross mesca module !!!!!!!!!!!!!!!!!!!!!!!!")
+# print("after the mesca modeule ",conv23_cross_mseca.shape)
+# conv23_cross_mseca = tf.keras.layers.Add()([conv23_cross_mseca, conv23])
+
+
+###### Squeeze and excitation module
+
+se_out = se_module(conv23)
 
 # optisecam3d_shuffle_op = optisecam3d_shuffle(conv23)
 
@@ -677,10 +843,10 @@ def safe_reshape(x, shape):
 
 flatten_temporal = tf.keras.layers.Lambda(lambda x: tf.reshape(x, (-1, x.shape[2], x.shape[3], x.shape[4])))
 restore_shape = tf.keras.layers.Lambda(lambda x: tf.reshape(x, (-1, 40, x.shape[1], x.shape[2], x.shape[3])))
-
-# Apply the Conv2D layer
-print("conv23_cross_mesca",conv23_cross_mseca.shape)
-conv1_tea1 = flatten_temporal(conv23_cross_mseca)  # Flatten
+#
+# # Apply the Conv2D layer
+# print("conv23_cross_mesca",conv23_cross_mseca.shape)
+conv1_tea1 = flatten_temporal(se_out)  # Flatten
 conv1_tea1 = conv1_TEA1(conv1_tea1)
 conv1_tea1 = restore_shape(conv1_tea1)  # Restore
 
@@ -690,7 +856,7 @@ conv2_tea1_temp = conv2_TEA1(reshaped_tea_mta1)
 conv2_tea1 = restore_shape(conv2_tea1_temp)  # Restore
 print("conv1_tea1",conv1_tea1.shape,"conv2_tea1",conv2_tea1.shape)
 #tea1_op = tf.keras.layers.Add()([conv1_tea1, conv2_tea1])
-
+#
 #### TEA-2
 #print("tea1_op",tea1_op.shape)
 tea1_op_reshaped = flatten_temporal(conv2_tea1)
@@ -716,12 +882,15 @@ conv2_tea3 = conv2_TEA3(tea_mta3)
 conv2_tea3 = restore_shape(conv2_tea3)
 
 #tea3_op = tf.keras.layers.Add()([conv2_tea3, tea2_op])
-
+print(f"output of gmn {conv2_tea3.shape}")
 #print(f"GMN BAAD WALI BRANCH {tea3_op.shape}")
 
-print(f" shape output to the general layers {conv2_tea3.shape}")
-exit()
-#### Output Layer
+###LPN network
+
+# conv_lpn_out = lpn(conv23)
+
+
+# #### Output Layer
 gap_op = tf.keras.layers.GlobalAveragePooling3D()(conv2_tea3)
 dense1 = tf.keras.layers.Dense(256, activation='relu')(gap_op)
 dropout1 = tf.keras.layers.Dropout(rate=0.2)(dense1)
@@ -751,10 +920,10 @@ model.summary()
 ###### Training the Model
 history = model.fit(
     [X_train_rdi, X_train_rai,y_train_onehot], y_train_onehot,
-    epochs=29,
-    batch_size=2,
+    epochs=30,
+    batch_size=8,
     validation_data=([X_dev_rdi, X_dev_rai,y_dev_onehot], y_dev_onehot),
-    validation_batch_size=2
+    validation_batch_size=8
 )
 
 

@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # Load the history dictionary
-history_path = 'exp 8/exp_8_caa_gmn_history.npy'
+history_path = 'exp9/exp_9_m3net_history.npy'
 history = np.load(history_path, allow_pickle=True).item()
 
 # Find the epoch with the best validation accuracy
@@ -30,7 +30,7 @@ plt.title('Training and Validation Accuracy')
 plt.legend()
 plt.grid(True)
 plt.tight_layout()
-plt.savefig('exp-7_accuracy_plot.png')  # Save the figure
+plt.savefig('exp-9_accuracy_plot.png')  # Save the figure
 plt.close()
 
 # Loss plot
@@ -43,5 +43,5 @@ plt.title('Training and Validation Loss')
 plt.legend()
 plt.grid(True)
 plt.tight_layout()
-plt.savefig('exp_7_loss_plot.png')  # Save the figure
+plt.savefig('exp_9_loss_plot.png')  # Save the figure
 plt.close()
