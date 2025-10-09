@@ -85,6 +85,8 @@ y_dev_onehot = tf.keras.utils.to_categorical(y_dev)
 
 ####### Model Makingclenv
 
+####### Model Makingclenv
+
 ##### MS-CAM Module
 class MS_CAM_3D(tf.keras.layers.Layer):
     def __init__(self, channels, reduction=16):
@@ -229,6 +231,8 @@ class TEA_ME(tf.keras.layers.Layer):
 
 ###### Multiple Temporal Aggregation (MTA) Module
 
+###### Multiple Temporal Aggregation (MTA) Module
+
 class TEA_MTA(tf.keras.layers.Layer):
     def __init__(self, N, T, H, W, num_channels):
         super().__init__()
@@ -284,28 +288,37 @@ class TEA_MTA(tf.keras.layers.Layer):
         C = self.num_channels
         split_factor = self.split_factor
 
+        # Split input channels into 4 parts
         Xi_0, Xi_1, Xi_2, Xi_3 = tf.split(X, num_or_size_splits=4, axis=-1)
 
+        # First branch: pass through
         Xo_0 = Xi_0
 
+        # Second branch: temporal + spatial attention
         Xi_1 = tf.keras.layers.Add()([Xo_0, Xi_1])
         Xi_1_reshaped_temp = tf.reshape(Xi_1, [batch_size * T, H * W, split_factor])
         Xi_1_temp = self.grouped_conv1d(Xi_1_reshaped_temp, self.temp_conv1_layers)
-        Xi_1_reshaped_spa = tf.reshape(Xi_1_temp, [batch_size, T, H, W, split_factor])
+        Xi_1_reshaped_spa = tf.reshape(Xi_1_temp, [batch_size * T, H, W, split_factor])
         Xo_1 = self.conv_spa_1(Xi_1_reshaped_spa)
+        Xo_1 = tf.reshape(Xo_1, [batch_size, T, H, W, split_factor])
 
+        # Third branch
         Xi_2 = tf.keras.layers.Add()([Xo_1, Xi_2])
         Xi_2_reshaped_temp = tf.reshape(Xi_2, [batch_size * T, H * W, split_factor])
         Xi_2_temp = self.grouped_conv1d(Xi_2_reshaped_temp, self.temp_conv2_layers)
-        Xi_2_reshaped_spa = tf.reshape(Xi_2_temp, [batch_size, T, H, W, split_factor])
+        Xi_2_reshaped_spa = tf.reshape(Xi_2_temp, [batch_size * T, H, W, split_factor])
         Xo_2 = self.conv_spa_2(Xi_2_reshaped_spa)
+        Xo_2 = tf.reshape(Xo_2, [batch_size, T, H, W, split_factor])
 
+        # Fourth branch
         Xi_3 = tf.keras.layers.Add()([Xo_2, Xi_3])
         Xi_3_reshaped_temp = tf.reshape(Xi_3, [batch_size * T, H * W, split_factor])
         Xi_3_temp = self.grouped_conv1d(Xi_3_reshaped_temp, self.temp_conv3_layers)
-        Xi_3_reshaped_spa = tf.reshape(Xi_3_temp, [batch_size, T, H, W, split_factor])
+        Xi_3_reshaped_spa = tf.reshape(Xi_3_temp, [batch_size * T, H, W, split_factor])
         Xo_3 = self.conv_spa_3(Xi_3_reshaped_spa)
+        Xo_3 = tf.reshape(Xo_3, [batch_size, T, H, W, split_factor])
 
+        # Concatenate all outputs
         Xo = tf.keras.layers.Concatenate(axis=-1)([Xo_0, Xo_1, Xo_2, Xo_3])
 
         return Xo
@@ -383,58 +396,51 @@ class CT_Module(tf.keras.layers.Layer):
 ####### (2+1)D Convolutional Layer
 
 class two_plus_oneDConv(tf.keras.layers.Layer):
-    """ Implementation of(2+1)D Conv """
+    def __init__(self, filters, kernel_dims, H, W, C, T, **kwargs):
+        super().__init__(**kwargs)
+        self.filters = filters
+        self.kernel_dims = kernel_dims
+        self.H = H
+        self.W = W
+        self.C = C
+        self.T = T
 
-    def __init__(self, filters, kernel_dims, H, W, C, T):
-        #### Defining Essentials
-        super().__init__()
-        self.filters = filters  # Number of Filters in the Output
-        self.kernel_dims = kernel_dims  # Dimensions of the Kernel
-        self.H = H  # Height of the Input
-        self.W = W  # Width of the Input
-        self.C = C  # Number of Channels in the Input
-        self.T = T  # Number of Frames in the Input
+        self.conv2d_depthwise = tf.keras.layers.Conv2D(
+            filters=C,
+            kernel_size=(self.kernel_dims, self.kernel_dims),
+            padding='same',
+            activation='linear',
+            kernel_regularizer=tf.keras.regularizers.l2(1e-5)
+        )
 
-        #### Defining Layers
-        self.conv2d_depthwise = tf.keras.layers.Conv2D(filters=self.C, kernel_size=(self.kernel_dims, self.kernel_dims),
-                                                       padding='same', activation='linear',
-                                                       kernel_regularizer=tf.keras.regularizers.l2(1e-5))
-        self.conv2d_pointwise = tf.keras.layers.Conv2D(filters=self.filters, kernel_size=(1, 1),
-                                                       padding='same', activation='relu',
-                                                       kernel_regularizer=tf.keras.regularizers.l2(1e-5))
-        self.conv1d = tf.keras.layers.Conv1D(filters=self.filters, kernel_size=self.kernel_dims, padding='same',
-                                             activation='relu', kernel_regularizer=tf.keras.regularizers.l2(1e-5))
+        self.conv2d_pointwise = tf.keras.layers.Conv2D(
+            filters=self.filters,
+            kernel_size=(1, 1),
+            padding='same',
+            activation='relu',
+            kernel_regularizer=tf.keras.regularizers.l2(1e-5)
+        )
 
-    def get_config(self):
-        config = super().get_config().copy()
-        config.update({
-            'filters': self.filters,
-            'kernel_dims': self.kernel_dims,
-            'H': self.H,
-            'W': self.W,
-            'C': self.C,
-            'T': self.T
-        })
-        return config
+        self.conv1d = tf.keras.layers.Conv1D(
+            filters=self.filters,
+            kernel_size=self.kernel_dims,
+            padding='same',
+            activation='relu',
+            kernel_regularizer=tf.keras.regularizers.l2(1e-5)
+        )
 
     def call(self, X):
-        """
-        Implementation of (2+1)D Convolution
-
-        INPUTS:-
-        1) X : Input Tensor of Shape [N,T,H,W,C] (Implementation involves 'Channel Last' Strategy)
-
-        OUTPUTS:-H
-        1) X_o : Tensor of shape [N,T,H,W,C]
-
-        """
+        N = tf.shape(X)[0]
+        X = tf.reshape(X, [-1, self.H, self.W, self.C])
         X = self.conv2d_depthwise(X)
         X = self.conv2d_pointwise(X)
-        X = tf.keras.layers.Reshape((self.H * self.W, self.T, self.filters))(X)
+        X = tf.reshape(X, [N, self.T, self.H, self.W, self.filters])
+        X = tf.transpose(X, [0, 2, 3, 1, 4])
+        X = tf.reshape(X, [-1, self.T, self.filters])
         X = self.conv1d(X)
-        X_o = tf.keras.layers.Reshape((self.T, self.H, self.W, self.filters))(X)
-
-        return X_o
+        X = tf.reshape(X, [N, self.H, self.W, self.T, self.filters])
+        X = tf.transpose(X, [0, 3, 1, 2, 4])
+        return X
 
 
 class Cross_MSECA_Module(tf.keras.layers.Layer):
@@ -788,6 +794,12 @@ model.summary()
 ##### Defining Callbacks
 # filepath = "./Models/RDAHGR_RDI_5050_Soli.h5"
 # checkpoint = tf.keras.callbacks.ModelCheckpoint(filepath, monitor='val_accuracy', save_best_only=True, mode='max')
+
+# from keras_flops import get_flops
+# flops = get_flops(model, batch_size=1)
+# print(f"FLOPS: {flops / 10 ** 9:.03} G")
+# exit()
+
 
 ###### Training the Model
 history = model.fit(

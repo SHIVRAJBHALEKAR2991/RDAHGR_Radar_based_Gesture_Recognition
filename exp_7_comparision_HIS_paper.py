@@ -780,7 +780,7 @@ history = model.fit(
 
 
 ##### Saving Training Metrics
-np.save('exp_2_mesca_latefusion_history.npy', history.history)
+np.save('exp_7_mesca_latefusion_history.npy', history.history)
 
 # Save only the architecture
 model_json = model.to_json()

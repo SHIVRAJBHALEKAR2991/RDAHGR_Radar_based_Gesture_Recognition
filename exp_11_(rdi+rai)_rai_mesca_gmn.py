@@ -559,20 +559,20 @@ conv22_rdi = CT_Module(40, 32, 32, 64)
 conv23_rdi = CT_Module(40, 32, 32, 64)
 
 #### RAI
-conv11_rai = two_plus_oneDConv(32, 3, 32, 32, 1, 40)
-conv12_rai = two_plus_oneDConv(32, 3, 32, 32, 32 + 1, 40)
-conv13_rai = two_plus_oneDConv(32, 3, 32, 32, 32 + 32 + 1, 40)
+conv11_rai = two_plus_oneDConv(32, 3, 32, 32, 5, 40)
+conv12_rai = two_plus_oneDConv(32, 3, 32, 32, 32 + 5, 40)
+conv13_rai = two_plus_oneDConv(32, 3, 32, 32, 32 + 37 , 40)
 
 conv21_rai = two_plus_oneDConv(64, 3, 32, 32, 32, 40)
 conv22_rai = two_plus_oneDConv(64, 3, 32, 32, 64 + 32, 40)
-conv23_rai = two_plus_oneDConv(64, 3, 32, 32, 160, 40)
+conv23_rai = two_plus_oneDConv(64, 3, 32, 32, 64 + 64 + 32, 40)
 
 ##### Channel Attention Module
 # jlce_module = JLCE(1,5,64)
 # cam3d = CAM3D(128,40,32,32,1)
 # eca_module = ECA_Module(40,32,32,128,1,1)
 # optisecam3d_shuffle = OptiSECAM3D_Shuffle(128,1)
-cross_mseca_module = Cross_MSECA_Module(40, 32, 32, 128, 3)
+cross_mseca_module = Cross_MSECA_Module(40, 32, 32,64, 3)
 
 ##### TEA
 #### TEA-1
@@ -600,7 +600,7 @@ conv2_TEA3 = tf.keras.layers.Conv2D(filters=128, kernel_size=(1, 1), padding='sa
                                     activation='relu', kernel_regularizer=tf.keras.regularizers.l2(1e-5))
 
 ##### ArcFace Loss
-arc_logit_layer = ArcFace(11, 30.0, 0.3, tf.keras.regularizers.l2(1e-4))
+arc_logit_layer = ArcFace(11, 30.0, 0.2, tf.keras.regularizers.l2(1e-4))
 
 ###### Defining Model
 
@@ -611,59 +611,70 @@ Input_Labels = tf.keras.layers.Input(shape=(11,))
 # Input_Layer_rdi = tf.keras.layers.Input(shape=(None, H, W, C_rdi))
 # Input_Layer_rdi = tf.keras.layers.Input(shape=(40, 32, 32, 4))  # Fix temporal dimension
 # Input_Labels = tf.keras.layers.Input(shape=(11,))
+#### Concatenation Operation
+conv23 = tf.keras.layers.Concatenate(axis=-1)([Input_Layer_rdi,Input_Layer_rai])
 
+print(Input_Layer_rai.shape)
 
 ##### Conv Layers
 
 #### RDI
 ### Tensorized Residual Block - 1
-print("input_layer_rdi",Input_Layer_rdi.shape)
-conv_up1 = conv_up1(Input_Layer_rdi)
-print("conv_up1 size",conv_up1.shape)
-conv11_rdi = conv11_rdi(conv_up1)
-conv12_rdi = conv12_rdi(conv11_rdi)
-print("Before Add: conv12_rdi", conv12_rdi.shape, "conv_up1", conv_up1.shape)
-conv12_rdi = tf.keras.layers.Add()([conv12_rdi, conv_up1])
-print("After Add: conv12_rdi", conv12_rdi.shape, "conv_up1", conv_up1.shape)
-conv12_rdi = tf.keras.layers.Add()([conv12_rdi, conv_up1])
-
-conv12_rdi = tf.keras.layers.Add()([conv12_rdi, conv_up1])
-conv13_rdi = conv13_rdi(conv12_rdi)
-conv13_rdi = tf.keras.layers.Add()([conv13_rdi, conv11_rdi])
+# print("input_layer_rdi",conv23.shape)
+# conv_up1 = conv_up1(conv23)
+# print("conv_up1 size",conv_up1.shape)
+# conv11_rdi = conv11_rdi(conv_up1)
+# conv12_rdi = conv12_rdi(conv11_rdi)
+# print("Before Add: conv12_rdi", conv12_rdi.shape, "conv_up1", conv_up1.shape)
+# conv12_rdi = tf.keras.layers.Add()([conv12_rdi, conv_up1])
+# print("After Add: conv12_rdi", conv12_rdi.shape, "conv_up1", conv_up1.shape)
+# conv12_rdi = tf.keras.layers.Add()([conv12_rdi, conv_up1])
+#
+# conv12_rdi = tf.keras.layers.Add()([conv12_rdi, conv_up1])
+# conv13_rdi = conv13_rdi(conv12_rdi)
+# conv13_rdi = tf.keras.layers.Add()([conv13_rdi, conv11_rdi])
 
 ### Tensorized Residual Block - 2
-conv_up2 = conv_up2(conv13_rdi)
-conv21_rdi = conv21_rdi(conv_up2)
-conv22_rdi = conv22_rdi(conv21_rdi)
-conv22_rdi = tf.keras.layers.Add()([conv22_rdi, conv_up2])
-conv23_rdi = conv23_rdi(conv22_rdi)
-conv23_rdi = tf.keras.layers.Add()([conv23_rdi, conv21_rdi])
+# conv_up2 = conv_up2(conv13_rdi)
+# conv21_rdi = conv21_rdi(conv_up2)
+# conv22_rdi = conv22_rdi(conv21_rdi)
+# conv22_rdi = tf.keras.layers.Add()([conv22_rdi, conv_up2])
+# conv23_rdi = conv23_rdi(conv22_rdi)
+# conv23_rdi = tf.keras.layers.Add()([conv23_rdi, conv21_rdi])
 
 #### RAI
 ### Dense Block - 1
-conv11_rai = conv11_rai(Input_Layer_rai)
-conv11_rai = tf.keras.layers.Concatenate(axis=-1)([conv11_rai,Input_Layer_rai])
+print(conv23.shape)
+# exit()
+conv11_rai = conv11_rai(conv23)
+print(conv11_rai.shape)
+# exit()
+conv11_rai = tf.keras.layers.Concatenate(axis=-1)([conv11_rai,conv23])
+# conv11_rai= tf.keras.layers.Concatenate(axis=-1)([con])
+print(conv11_rai.shape)
+# exit()
 conv12_rai = conv12_rai(conv11_rai)
 conv12_rai = tf.keras.layers.Concatenate(axis=-1)([conv12_rai,conv11_rai])
+print(conv12_rai.shape)
+# exit()
 conv13_rai = conv13_rai(conv12_rai)
 
-### Dense Block - 2
+## Dense Block - 2
 conv21_rai = conv21_rai(conv13_rai)
 conv21_rai = tf.keras.layers.Concatenate(axis=-1)([conv21_rai,conv13_rai])
 conv22_rai = conv22_rai(conv21_rai)
 conv22_rai = tf.keras.layers.Concatenate(axis=-1)([conv22_rai,conv21_rai])
 conv23_rai = conv23_rai(conv22_rai)
 
-#### Concatenation Operation
-conv23 = tf.keras.layers.Concatenate(axis=-1)([conv23_rdi,conv23_rai])
+
 
 ##### Channel Attention
 print("entering into the mesca modeule  !!!!!")
-print("size entering the mesca module ",conv23.shape)
-conv23_cross_mseca = cross_mseca_module(conv23)
+print("size entering the mesca module",conv23_rai.shape)
+conv23_cross_mseca = cross_mseca_module(conv23_rai)
 print("left the cross mesca module !!!!!!!!!!!!!!!!!!!!!!!!")
 print("after the mesca modeule ",conv23_cross_mseca.shape)
-conv23_cross_mseca = tf.keras.layers.Add()([conv23_cross_mseca, conv23])
+conv23_cross_mseca = tf.keras.layers.Add()([conv23_cross_mseca, conv23_rai])
 
 # optisecam3d_shuffle_op = optisecam3d_shuffle(conv23)
 
@@ -718,9 +729,6 @@ conv2_tea3 = restore_shape(conv2_tea3)
 #tea3_op = tf.keras.layers.Add()([conv2_tea3, tea2_op])
 
 #print(f"GMN BAAD WALI BRANCH {tea3_op.shape}")
-
-print(f" shape output to the general layers {conv2_tea3.shape}")
-# exit()
 #### Output Layer
 gap_op = tf.keras.layers.GlobalAveragePooling3D()(conv2_tea3)
 dense1 = tf.keras.layers.Dense(256, activation='relu')(gap_op)
@@ -742,12 +750,6 @@ model = tf.keras.models.Model(inputs=[Input_Layer_rdi, Input_Layer_rai,Input_Lab
 model.compile(tf.keras.optimizers.Adam(learning_rate=1e-4), loss='categorical_crossentropy', metrics=['accuracy'])
 
 model.summary()
-
-# from keras_flops import get_flops
-# flops = get_flops(model, batch_size=1)
-# print(f"FLOPS: {flops / 10 ** 9:.03} G")
-# exit()
-
 # tf.keras.utils.plot_model(model)
 
 ##### Defining Callbacks
@@ -757,7 +759,7 @@ model.summary()
 ###### Training the Model
 history = model.fit(
     [X_train_rdi, X_train_rai,y_train_onehot], y_train_onehot,
-    epochs=29,
+    epochs=30,
     batch_size=2,
     validation_data=([X_dev_rdi, X_dev_rai,y_dev_onehot], y_dev_onehot),
     validation_batch_size=2
@@ -765,12 +767,13 @@ history = model.fit(
 
 
 ##### Saving Training Metrics
-np.save('exp_2_mesca_latefusion_history.npy', history.history)
+np.save('exp_11_(rdi+rai)_rai_mesca_gmn.npy', history.history)
 
 # Save only the architecture
 model_json = model.to_json()
-with open("exp_2_mesca_latefusion_architecture.json", "w") as json_file:
+with open("exp_11_(rdi+rai)_rai_mesca_gmn_architecture.json", "w") as json_file:
     json_file.write(model_json)
 
 # Save only the weights
-model.save_weights("exp_2_mesca_latefusion_weights.h5")
+model.save_weights("exp_11_(rdi+rai)_rai_mesca_gmn.weights.h5")
+

@@ -823,6 +823,11 @@ model = tf.keras.models.Model(inputs=[Input_Layer_rdi, Input_Layer_rai,Input_Lab
 model.compile(tf.keras.optimizers.Adam(learning_rate=1e-4), loss='categorical_crossentropy', metrics=['accuracy'])
 
 model.summary()
+
+from keras_flops import get_flops
+flops = get_flops(model, batch_size=1)
+print(f"FLOPS: {flops / 10 ** 9:.03} G")
+# exit()
 # tf.keras.utils.plot_model(model)
 
 ##### Defining Callbacks

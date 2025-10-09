@@ -57,6 +57,17 @@ import math
 # import pydot
 # from sklearn.utils import shuffle
 
+####### Custom Reshape Layers for Proper Serialization
+class FlattenTemporal(tf.keras.layers.Layer):
+    """Custom layer to flatten temporal dimension for Conv2D operations"""
+    def call(self, x):
+        return tf.reshape(x, (-1, x.shape[2], x.shape[3], x.shape[4]))
+
+class RestoreShape(tf.keras.layers.Layer):
+    """Custom layer to restore temporal dimension after Conv2D operations"""
+    def call(self, x):
+        return tf.reshape(x, (-1, 40, x.shape[1], x.shape[2], x.shape[3]))
+
 ####### Loading Dataset
 
 ####### Loading Dataset
@@ -87,9 +98,9 @@ y_dev_onehot = tf.keras.utils.to_categorical(y_dev)
 class TEA_ME(tf.keras.layers.Layer):
     """ TEA Module's Motion Excitation Block for Motion Modelling """
 
-    def __init__(self, reduction_factor, num_channels):
+    def __init__(self, reduction_factor, num_channels, **kwargs):
         #### Defining Essentials
-        super().__init__()
+        super().__init__(**kwargs)
         self.reduction_factor = reduction_factor  # Reduction Factor for Reducing Conv
         self.num_channels = num_channels  # Number of Channels in the Input
 
@@ -163,8 +174,8 @@ class TEA_ME(tf.keras.layers.Layer):
 ###### Multiple Temporal Aggregation (MTA) Module
 
 class TEA_MTA(tf.keras.layers.Layer):
-    def __init__(self, N, T, H, W, num_channels):
-        super().__init__()
+    def __init__(self, N, T, H, W, num_channels, **kwargs):
+        super().__init__(**kwargs)
         self.num_channels = num_channels
         self.N = N
         self.T = T
@@ -251,9 +262,9 @@ class TEA_MTA(tf.keras.layers.Layer):
 class CT_Module(tf.keras.layers.Layer):
     """ 3D Tensor Separable Convolution """
 
-    def __init__(self, T, H, W, C):
+    def __init__(self, T, H, W, C, **kwargs):
         ##### Defining Instatiations
-        super().__init__()
+        super().__init__(**kwargs)
         self.T = T  # Total number of Frames
         self.H = H  # Height of the Input
         self.W = W  # Width of the Input
@@ -318,9 +329,9 @@ class CT_Module(tf.keras.layers.Layer):
 class two_plus_oneDConv(tf.keras.layers.Layer):
     """ Implementation of(2+1)D Conv """
 
-    def __init__(self, filters, kernel_dims, H, W, C, T):
+    def __init__(self, filters, kernel_dims, H, W, C, T, **kwargs):
         #### Defining Essentials
-        super().__init__()
+        super().__init__(**kwargs)
         self.filters = filters  # Number of Filters in the Output
         self.kernel_dims = kernel_dims  # Dimensions of the Kernel
         self.H = H  # Height of the Input
@@ -373,10 +384,10 @@ class two_plus_oneDConv(tf.keras.layers.Layer):
 class Cross_MSECA_Module(tf.keras.layers.Layer):
     """ Implementation of 3D MSECA(Multi-Scale Efficient Channel Attention) Module """
 
-    def __init__(self, T, H, W, C, k):
+    def __init__(self, T, H, W, C, k, **kwargs):
         ##### Defining Essentials
 
-        super().__init__()
+        super().__init__(**kwargs)
         self.T = T
         self.H = H
         self.W = W
@@ -445,13 +456,13 @@ class Cross_MSECA_Module(tf.keras.layers.Layer):
 
 
 class ArcFace(tf.keras.layers.Layer):
-
-    def __init__(self, n_classes, s, m, regularizer):
-        super().__init__()
+    def __init__(self, n_classes, s, m, regularizer, **kwargs):
+        super().__init__(**kwargs)  # Accept and pass kwargs including name
         self.n_classes = n_classes
         self.s = s
         self.m = m
         self.regularizer = tf.keras.regularizers.get(regularizer)
+
 
     def get_config(self):
         config = super().get_config().copy()
@@ -645,8 +656,8 @@ def safe_reshape(x, shape):
     # print("After Reshape:", reshaped_x.shape)
     return reshaped_x
 
-flatten_temporal = tf.keras.layers.Lambda(lambda x: tf.reshape(x, (-1, x.shape[2], x.shape[3], x.shape[4])))
-restore_shape = tf.keras.layers.Lambda(lambda x: tf.reshape(x, (-1, 40, x.shape[1], x.shape[2], x.shape[3])))
+flatten_temporal = FlattenTemporal()
+restore_shape = RestoreShape()
 
 # Apply the Conv2D layer
 print("conv23_cross_mesca",conv23_cross_mseca.shape)
@@ -709,30 +720,54 @@ model = tf.keras.models.Model(inputs=[Input_Layer_rdi, Input_Layer_rai,Input_Lab
 model.compile(tf.keras.optimizers.Adam(learning_rate=1e-4), loss='categorical_crossentropy', metrics=['accuracy'])
 
 model.summary()
-# tf.keras.utils.plot_model(model)
 
-##### Defining Callbacks
+# from keras_flops import get_flops
+# flops = get_flops(model, batch_size=1)
+# print(f"FLOPS: {flops / 10 ** 9:.03} G")
+# exit()
+tf.keras.utils.plot_model(model)
+
+# #### Defining Callbacks
 # filepath = "./Models/RDAHGR_RDI_5050_Soli.h5"
 # checkpoint = tf.keras.callbacks.ModelCheckpoint(filepath, monitor='val_accuracy', save_best_only=True, mode='max')
 
 ###### Training the Model
-history = model.fit(
-    [X_train_rdi, X_train_rai,y_train_onehot], y_train_onehot,
-    epochs=30,
-    batch_size=2,
-    validation_data=([X_dev_rdi, X_dev_rai,y_dev_onehot], y_dev_onehot),
-    validation_batch_size=2
-)
+# history = model.fit(
+#     [X_train_rdi, X_train_rai,y_train_onehot], y_train_onehot,
+#     epochs=30,
+#     batch_size=2,
+#     validation_data=([X_dev_rdi, X_dev_rai,y_dev_onehot], y_dev_onehot),
+#     validation_batch_size=2
+# )
 
 
-##### Saving Training Metrics
-np.save('exp_1_mesca_early_history.npy', history.history)
+# ##### Saving Training Metrics
+# np.save('exp_1_mesca_early_history.npy', history.history)
 
-# Save only the architecture
-model_json = model.to_json()
-with open("exp_1_mesca_early_architecture.json", "w") as json_file:
-    json_file.write(model_json)
+# # Save only the architecture
+# model_json = model.to_json()
+# with open("exp_1_mesca_early_architecture.json", "w") as json_file:
+#     json_file.write(model_json)
 
-# Save only the weights
-model.save_weights("exp_1_mesca_early_weights.h5")
+# # Save only the weights
+# model.save_weights("exp_1_mesca_early_weights.h5")
 
+# if __name__ == "__main__":
+#     history = model.fit(
+#         [X_train_rdi, X_train_rai, y_train_onehot], y_train_onehot,
+#         epochs=30,
+#         batch_size=2,
+#         validation_data=([X_dev_rdi, X_dev_rai, y_dev_onehot], y_dev_onehot),
+#         validation_batch_size=2
+#     )
+
+#     ##### Saving Training Metrics
+#     np.save('exp_1_mesca_early_history.npy', history.history)
+
+#     # Save only the architecture
+#     model_json = model.to_json()
+#     with open("exp_1_mesca_early_architecture.json", "w") as json_file:
+#         json_file.write(model_json)
+
+#     # Save only the weights
+#     model.save_weights("exp_1_mesca_early_weights.h5")

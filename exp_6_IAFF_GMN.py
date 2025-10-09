@@ -788,6 +788,11 @@ model.summary()
 # filepath = "./Models/RDAHGR_RDI_5050_Soli.h5"
 # checkpoint = tf.keras.callbacks.ModelCheckpoint(filepath, monitor='val_accuracy', save_best_only=True, mode='max')
 
+# from keras_flops import get_flops
+# flops = get_flops(model, batch_size=1)
+# print(f"FLOPS: {flops / 10 ** 9:.03} G")
+# exit()
+
 ###### Training the Model
 history = model.fit(
     [X_train_rdi, X_train_rai,y_train_onehot], y_train_onehot,

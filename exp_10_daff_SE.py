@@ -62,8 +62,9 @@ import os
 import gc
 import math
 # import pydot
-# from sklearn.utils import shuffle
+# from sklearn.utils import shuf
 
+from keras_flops import get_flops
 ####### Loading Dataset
 
 ####### Loading Dataset
@@ -911,6 +912,10 @@ model = tf.keras.models.Model(inputs=[Input_Layer_rdi, Input_Layer_rai,Input_Lab
 model.compile(tf.keras.optimizers.Adam(learning_rate=1e-4), loss='categorical_crossentropy', metrics=['accuracy'])
 
 model.summary()
+
+flops = get_flops(model, batch_size=1)
+print(f"FLOPS: {flops / 10 ** 9:.03} G")
+# exit()
 # tf.keras.utils.plot_model(model)
 
 ##### Defining Callbacks
@@ -921,19 +926,19 @@ model.summary()
 history = model.fit(
     [X_train_rdi, X_train_rai,y_train_onehot], y_train_onehot,
     epochs=30,
-    batch_size=8,
+    batch_size=2,
     validation_data=([X_dev_rdi, X_dev_rai,y_dev_onehot], y_dev_onehot),
-    validation_batch_size=8
+    validation_batch_size=2
 )
 
 
-##### Saving Training Metrics
-np.save('exp_2_mesca_latefusion_history.npy', history.history)
-
-# Save only the architecture
-model_json = model.to_json()
-with open("exp_2_mesca_latefusion_architecture.json", "w") as json_file:
-    json_file.write(model_json)
-
-# Save only the weights
-model.save_weights("exp_2_mesca_latefusion_weights.h5")
+# ##### Saving Training Metrics
+# np.save('exp_2_mesca_latefusion_history.npy', history.history)
+#
+# # Save only the architecture
+# model_json = model.to_json()
+# with open("exp_2_mesca_latefusion_architecture.json", "w") as json_file:
+#     json_file.write(model_json)
+#
+# # Save only the weights
+# model.save_weights("exp_2_mesca_latefusion_weights.h5")
